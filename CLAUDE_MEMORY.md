@@ -47,8 +47,18 @@
 
 **ALL 14 NICE-TO-HAVE CHAPTERS COMPLETE (21-34).**
 
+## Tutorial Series 2c — Advanced Features (Chapters 35-39)
+- **Location**: `D:\Documents\AI\documents\Game Learning\Game_Engine_Tutorial_2\`
+- **Phase J (Surface Detail)**: Ch 35 — COMPLETE (tangent space, TBN matrix, normal map textures, parallax mapping)
+- **Phase K (Asset Pipeline)**: Ch 36 — COMPLETE (OBJ parser, MTL materials, glTF/tinygltf overview, AssetManager caching)
+- **Phase L (AI Navigation)**: Ch 37 — COMPLETE (A* algorithm, NavGrid, NavMesh, funnel algorithm, PathFollower component)
+- **Phase M (Rendering Performance)**: Ch 38 — COMPLETE (glDrawElementsInstanced, instance buffers, glVertexAttribDivisor, frustum-culled instancing)
+- **Phase N (Environmental Effects)**: Ch 39 — COMPLETE (planar reflections, refraction FBOs, dudv distortion, Fresnel effect, underwater post-processing, swimming mechanics)
+
+**ALL 19 NICE-TO-HAVE CHAPTERS COMPLETE (21-39).**
+
 ## Additional Roadmaps
-- `ROADMAP_NICE_TO_HAVES.md` — Chapters 21-34 (all written)
+- `ROADMAP_NICE_TO_HAVES.md` — Chapters 21-39 (all written)
 - `ROADMAP_TRENCHBROOM.md` — 5-phase TrenchBroom integration (.map parser, FGD, brush collision)
 - `ROADMAP_TOP_DOWN_SHOOTER.md` — 7-phase genre adaptation (camera, input, 2D collision, weapons, levels, AI, polish)
 - `ROADMAP_MULTIPLAYER_INFRASTRUCTURE.md` — 5-part multiplayer (co-op campaign, lobbies, QMaster server, NAT traversal, game modes)

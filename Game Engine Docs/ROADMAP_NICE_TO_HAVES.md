@@ -317,6 +317,73 @@ Render convincing water surfaces and underwater effects:
 
 ---
 
+## Phase O: Animation Polish (Chapters 40-42)
+
+| Ch | Title | Key Concepts | Depends On |
+|----|-------|-------------|------------|
+| 40 | Animation Events & Notifies | Frame-triggered callbacks, event channels, footstep sounds, muzzle flash sync, damage windows | Ch 33 (Skeletal Animation), Ch 16 (Audio) |
+| 41 | Ragdoll Physics | Bone-to-rigidbody mapping, joint constraints, animation-to-ragdoll transition, impulse forces | Ch 33 (Skeletal Animation), Ch 10 (Physics) |
+| 42 | Animation Layers & Partial Body | Bone masks, upper/lower body split, additive blending, layer priorities | Ch 33 (Skeletal Animation) |
+
+### Chapter 40: Animation Events & Notifies
+Trigger gameplay actions at specific animation frames:
+- Event data embedded in animation clips (frame number + event type + parameters)
+- Notify system: animation system fires events, other systems listen (footsteps, particles, sounds)
+- Damage windows: melee attacks only deal damage during specific frames
+- Sound sync: footstep sounds on foot-down frames, reload click at magazine insert frame
+- Particle sync: muzzle flash at fire frame, shell casing eject
+- ECS integration: AnimationEventQueue component, eventDispatchSystem drains it each frame
+
+### Chapter 41: Ragdoll Physics
+Physics-driven death animations:
+- Map skeleton bones to physics rigid bodies (capsules, boxes)
+- Joint constraints between connected bones (hinge for elbows/knees, cone-twist for shoulders)
+- Transition: on death, copy current bone transforms to rigid bodies, disable animation, enable physics
+- Impulse: apply force from the killing blow's direction for satisfying death reactions
+- Settling: after ragdoll stops moving, freeze physics to save performance
+- ECS integration: Ragdoll component with body references, ragdollTransitionSystem
+
+### Chapter 42: Animation Layers & Partial Body
+Play different animations on different body parts simultaneously:
+- Bone masks: define which bones each layer controls (upper body vs lower body)
+- Layer system: base layer (locomotion) + overlay layer (shooting/reloading)
+- Additive blending: add an animation on top of another (flinch overlay, breathing)
+- Priority and weight: layers can override or blend with layers below
+- Use case: enemy walks and shoots simultaneously, player reloads while strafing
+- ECS integration: AnimationLayer component array, multi-layer evaluation in animationSystem
+
+---
+
+## Phase P: Advanced Rendering & Animation (Chapters 43-44)
+
+| Ch | Title | Key Concepts | Depends On |
+|----|-------|-------------|------------|
+| 43 | Inverse Kinematics (IK) | Two-bone IK solver, foot placement, IK targets, CCD algorithm | Ch 33 (Skeletal Animation) |
+| 44 | PBR Materials | Metallic-roughness workflow, Cook-Torrance BRDF, IBL, HDR environment maps | Ch 7 (Lighting), Ch 35 (Normal Mapping), Ch 28 (Post-Processing) |
+
+### Chapter 43: Inverse Kinematics
+Procedurally adjust bone positions to reach target points:
+- Forward vs inverse kinematics: FK plays authored poses, IK solves for a target
+- Two-bone IK solver: the classic arm/leg solution (law of cosines)
+- Foot placement: raycast down from hips, IK feet onto terrain surface, adjust pelvis height
+- Hand IK: hands gripping weapons, ledges, or objects at runtime
+- CCD (Cyclic Coordinate Descent): general-purpose IK for chains of any length
+- Blending IK with authored animation: IK as a post-process on top of skeletal animation
+- ECS integration: IKTarget component, ikSystem runs after animationSystem
+
+### Chapter 44: PBR Materials
+Physically-based rendering replacing Phong lighting:
+- Why PBR: energy conservation, materials look correct under any lighting
+- Metallic-roughness workflow: albedo, metallic, roughness, AO texture maps
+- Cook-Torrance specular BRDF: normal distribution (GGX), geometry (Smith), Fresnel (Schlick)
+- Diffuse: Lambertian divided by pi (energy-conserving)
+- Image-Based Lighting (IBL): prefiltered environment map for specular, irradiance map for diffuse
+- HDR rendering: render to floating-point FBO, tonemap in post-processing (Ch 28)
+- Migration path: swap Phong shader for PBR shader, existing normal maps (Ch 35) still work
+- ECS integration: PBRMaterial component replacing the existing material reference
+
+---
+
 ## Summary Table
 
 | Phase | Chapters | Effort | Impact |
@@ -335,6 +402,8 @@ Render convincing water surfaces and underwater effects:
 | L: AI Navigation | 37 | Medium-Hard | High — enemies that can navigate properly |
 | M: Rendering Performance | 38 | Medium | Medium — needed for dense scenes |
 | N: Environmental Effects | 39 | Medium-Hard | Medium — water is a classic FPS feature |
+| O: Animation Polish | 40-42 | Medium-Hard | High — animation events, ragdolls, and layered animation complete the animation pipeline |
+| P: Advanced Rendering & Animation | 43-44 | Hard | Medium-High — IK and PBR are pro-level features |
 
 ---
 
@@ -356,11 +425,16 @@ Render convincing water surfaces and underwater effects:
 | 32 | Frustum Culling | **COMPLETE** |
 | 33 | Skeletal Animation | **COMPLETE** |
 | 34 | Level Transitions | **COMPLETE** |
-| 35 | Normal Mapping | Pending |
-| 36 | Model Loading (OBJ & glTF) | Pending |
-| 37 | Pathfinding (A* & Nav Mesh) | Pending |
-| 38 | Instanced Rendering | Pending |
-| 39 | Water & Liquid Rendering | Pending |
+| 35 | Normal Mapping | **COMPLETE** |
+| 36 | Model Loading (OBJ & glTF) | **COMPLETE** |
+| 37 | Pathfinding (A* & Nav Mesh) | **COMPLETE** |
+| 38 | Instanced Rendering | **COMPLETE** |
+| 39 | Water & Liquid Rendering | **COMPLETE** |
+| 40 | Animation Events & Notifies | Pending |
+| 41 | Ragdoll Physics | Pending |
+| 42 | Animation Layers & Partial Body | Pending |
+| 43 | Inverse Kinematics (IK) | Pending |
+| 44 | PBR Materials | Pending |
 
 All chapters written to: `D:\Documents\AI\documents\Game Learning\Game_Engine_Tutorial_2\`
 
@@ -396,9 +470,14 @@ Original Ch 0-20
      │    └── Ch 38 (Instanced Rendering) — after Ch 32 + Ch 6
      │
      ├── Ch 33 (Skeletal Animation) — after Ch 6
-     │    └── Ch 36 (Model Loading) — after Ch 33 + Ch 6
+     │    ├── Ch 36 (Model Loading) — after Ch 33 + Ch 6
+     │    ├── Ch 40 (Animation Events) — after Ch 33 + Ch 16
+     │    ├── Ch 41 (Ragdoll Physics) — after Ch 33 + Ch 10
+     │    ├── Ch 42 (Animation Layers) — after Ch 33
+     │    └── Ch 43 (Inverse Kinematics) — after Ch 33
      │
      ├── Ch 35 (Normal Mapping) — after Ch 5 + Ch 7
+     │    └── Ch 44 (PBR Materials) — after Ch 35 + Ch 7 + Ch 28
      │
      └── Ch 37 (Pathfinding) — after Ch 14 + Ch 9
 ```
