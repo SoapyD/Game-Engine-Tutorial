@@ -57,8 +57,21 @@
 
 **ALL 19 NICE-TO-HAVE CHAPTERS COMPLETE (21-39).**
 
+## Tutorial Series 2d — Animation & Rendering Polish (Chapters 40-44)
+- **Location**: `D:\Documents\AI\documents\Game Learning\Game_Engine_Tutorial_2\`
+- **Phase O (Animation Polish)**: Ch 40-42 — COMPLETE (animation events/notifies with frame-triggered callbacks and event dispatch; ragdoll physics with bone-to-rigidbody mapping, joint constraints, death transitions; animation layers with bone masks, override/additive blending, partial body animation)
+- **Phase P (Advanced Rendering & Animation)**: Ch 43-44 — COMPLETE (inverse kinematics with two-bone IK solver, foot placement, CCD algorithm, look-at; PBR materials with Cook-Torrance BRDF, metallic-roughness workflow, IBL, HDR tone mapping)
+
+**ALL 24 NICE-TO-HAVE CHAPTERS COMPLETE (21-44).**
+
+## Tutorial Series 2e — Advanced Particles (Chapters 45-46)
+- **Location**: `D:\Documents\AI\documents\Game Learning\Game_Engine_Tutorial_2\`
+- **Phase Q (Advanced Particles)**: Ch 45-46 — COMPLETE (particle-world collision with bounce/friction, drag/wind/turbulence forces, flipbook texture animation, trails/ribbons, soft particles; data-driven JSON effect definitions, sub-emitters, colour/size curves, effect library with blood/fire/smoke/sparks/explosions/rocket trails, hot-reload)
+
+**ALL 26 NICE-TO-HAVE CHAPTERS COMPLETE (21-46).**
+
 ## Additional Roadmaps
-- `ROADMAP_NICE_TO_HAVES.md` — Chapters 21-39 (all written)
+- `ROADMAP_NICE_TO_HAVES.md` — Chapters 21-46 (all written)
 - `ROADMAP_TRENCHBROOM.md` — 5-phase TrenchBroom integration (.map parser, FGD, brush collision)
 - `ROADMAP_TOP_DOWN_SHOOTER.md` — 7-phase genre adaptation (camera, input, 2D collision, weapons, levels, AI, polish)
 - `ROADMAP_MULTIPLAYER_INFRASTRUCTURE.md` — 5-part multiplayer (co-op campaign, lobbies, QMaster server, NAT traversal, game modes)

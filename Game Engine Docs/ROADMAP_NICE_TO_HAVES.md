@@ -384,6 +384,32 @@ Physically-based rendering replacing Phong lighting:
 
 ---
 
+## Phase Q: Advanced Particles (Chapters 45-46)
+
+| Ch | Title | Key Concepts | Depends On |
+|----|-------|-------------|------------|
+| 45 | Advanced Particle Physics & Rendering | Particle-world collision, bouncing/friction, drag/wind forces, trails/ribbons, flipbook texture animation | Ch 20 (Particles), Ch 9 (Collision) |
+| 46 | Data-Driven Particle Effects | JSON particle definitions, emitter properties, sub-emitters, effect library (blood, fire, smoke, sparks, explosions) | Ch 45 (Advanced Particles), Ch 40 (Animation Events) |
+
+### Chapter 45: Advanced Particle Physics & Rendering
+Upgrade the basic particle pool from Ch 20 into a full-featured particle system:
+- Particle-world collision: raycast or sphere-cast each particle against level geometry, bounce with restitution and friction
+- Forces beyond gravity: drag (velocity-dependent resistance), wind (global/local force fields), turbulence (noise-based perturbation)
+- Particle trails/ribbons: connected strip geometry following a particle's path (rocket trails, bullet tracers, energy beams)
+- Flipbook texture animation: texture atlas with animation frames, UV offset per particle age (animated fire, smoke puffs, explosions)
+- Particle rotation and angular velocity for tumbling debris
+- Soft particles: fade near geometry using depth buffer comparison (prevents hard intersection lines)
+
+### Chapter 46: Data-Driven Particle Effects
+Author particle effects in JSON instead of hardcoded C++:
+- ParticleEffectDef: emitter shape (point, sphere, cone, box), emission rate, particle properties (lifetime range, speed range, colour curve, size curve)
+- Sub-emitters: particles that spawn child particles on birth, death, or collision (firework chains, sparks from bouncing debris, blood dripping)
+- Effect library with complete definitions: blood splatter (on hit + drip sub-emitter), fire (flickering + smoke + ember sub-emitters), explosions (flash + debris + smoke + shockwave), bullet impact (sparks + dust), rocket trail (smoke ribbon + ember sub-emitter)
+- ParticleEffect component and particleEffectSystem replacing hardcoded spawn functions
+- Integration with animation events (Ch 40): effects triggered by name from animation clips
+
+---
+
 ## Summary Table
 
 | Phase | Chapters | Effort | Impact |
@@ -404,6 +430,7 @@ Physically-based rendering replacing Phong lighting:
 | N: Environmental Effects | 39 | Medium-Hard | Medium — water is a classic FPS feature |
 | O: Animation Polish | 40-42 | Medium-Hard | High — animation events, ragdolls, and layered animation complete the animation pipeline |
 | P: Advanced Rendering & Animation | 43-44 | Hard | Medium-High — IK and PBR are pro-level features |
+| Q: Advanced Particles | 45-46 | Medium-Hard | High — collision, trails, data-driven effects complete the VFX pipeline |
 
 ---
 
@@ -430,11 +457,13 @@ Physically-based rendering replacing Phong lighting:
 | 37 | Pathfinding (A* & Nav Mesh) | **COMPLETE** |
 | 38 | Instanced Rendering | **COMPLETE** |
 | 39 | Water & Liquid Rendering | **COMPLETE** |
-| 40 | Animation Events & Notifies | Pending |
-| 41 | Ragdoll Physics | Pending |
-| 42 | Animation Layers & Partial Body | Pending |
-| 43 | Inverse Kinematics (IK) | Pending |
-| 44 | PBR Materials | Pending |
+| 40 | Animation Events & Notifies | **COMPLETE** |
+| 41 | Ragdoll Physics | **COMPLETE** |
+| 42 | Animation Layers & Partial Body | **COMPLETE** |
+| 43 | Inverse Kinematics (IK) | **COMPLETE** |
+| 44 | PBR Materials | **COMPLETE** |
+| 45 | Advanced Particle Physics & Rendering | **COMPLETE** |
+| 46 | Data-Driven Particle Effects | **COMPLETE** |
 
 All chapters written to: `D:\Documents\AI\documents\Game Learning\Game_Engine_Tutorial_2\`
 
@@ -479,5 +508,8 @@ Original Ch 0-20
      ├── Ch 35 (Normal Mapping) — after Ch 5 + Ch 7
      │    └── Ch 44 (PBR Materials) — after Ch 35 + Ch 7 + Ch 28
      │
-     └── Ch 37 (Pathfinding) — after Ch 14 + Ch 9
+     ├── Ch 37 (Pathfinding) — after Ch 14 + Ch 9
+     │
+     └── Ch 45 (Advanced Particles) — after Ch 20 + Ch 9
+          └── Ch 46 (Data-Driven Effects) — after Ch 45 + Ch 40
 ```
