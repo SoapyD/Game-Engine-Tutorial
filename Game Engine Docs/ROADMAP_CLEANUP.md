@@ -19,6 +19,8 @@ Each cleanup chapter explains **why** the refactor is needed, **what** changes, 
 | 35a | 35 | Material System Cleanup | Unified Material component, texture slot management, tangent computation in mesh loader, shader variant management |
 | 40a | 40 | Animation Pipeline Cleanup | Event handler registry, animation component audit, bone mask presets, animation graph simplification |
 | 45a | 45 | Particle System Cleanup | Force fields as entities, unified particle pool, trail system formalisation, per-effect configuration structs |
+| 50a | 50 | Tools & Pipeline Cleanup | ConfigManager (Lua-based config for all tweakables), editor state management, script hot-reload, asset dependency graph, editor/runtime separation |
+| 55a | 55 | Production Rendering Cleanup | LOD integration with instancing, tiled/clustered light culling, unified render pipeline update, final architecture review |
 
 ---
 
@@ -272,6 +274,71 @@ int main() {
 
 ---
 
+## Cleanup 50a: Tools & Pipeline Cleanup (after Ch 50)
+
+### Problems
+- Tweakable game values (camera speed, physics constants, HUD layout) are still hardcoded in C++
+- Editor state (selection, gizmo mode, undo history) is ad-hoc
+- Lua scripts require engine restart to pick up changes
+- Asset loading has no dependency tracking or build manifests
+
+### Refactoring Targets
+
+**1. ConfigManager**
+- All tweakable values loaded from Lua config files at startup
+- `config.get<float>("camera.speed")`, `config.get<int>("physics.substeps")`
+- Hot-reload in debug builds — change config.lua, see results immediately
+- Migrate PhysicsConfig, HUD layout values, particle parameters, weapon configs to Lua
+
+**2. Editor state management**
+- Unified `EditorState` context (selected entity, active tool, gizmo mode)
+- Undo/redo stack formalisation
+- Editor vs runtime mode separation (editor systems don't tick gameplay)
+
+**3. Script hot-reload**
+- File watcher on script directory
+- Reload Lua scripts without restarting the engine
+- Error handling for broken scripts (don't crash, show error in console)
+
+**4. Asset dependency graph**
+- Track which assets reference which other assets
+- Rebuild only what changed when an asset is modified
+- Build manifest for release packaging
+
+---
+
+## Cleanup 55a: Production Rendering Cleanup (after Ch 55)
+
+### Problems
+- LOD selection is per-entity with no batching consideration
+- Deferred renderer's light loop is brute-force (every light tests every pixel)
+- Render pipeline has grown with new passes but state management is ad-hoc
+- No unified profiling hooks in the render pipeline
+
+### Refactoring Targets
+
+**1. LOD-aware instanced rendering**
+- Group entities by (mesh, LOD level) for batched draw calls
+- LOD selection integrated into frustum culling pass
+- Billboard impostor generation for distant objects
+
+**2. Tiled/clustered light culling**
+- Divide screen into tiles, assign lights to tiles
+- Only evaluate lights that affect each tile
+- Scales from dozens to hundreds of lights
+
+**3. Render pipeline update**
+- All new passes (G-buffer, SSAO, AA) integrated into RenderPipeline from 30a
+- Pipeline configuration object (enable/disable passes, quality presets)
+- GPU timestamp queries for per-pass profiling
+
+**4. Quality presets**
+- Low/Medium/High/Ultra presets that configure LOD bias, SSAO samples, shadow resolution, AA mode
+- Exposed through settings menu from Ch 22
+- ConfigManager integration from 50a
+
+---
+
 ## Progress Tracker
 
 | Cleanup | Status |
@@ -285,3 +352,5 @@ int main() {
 | 35a: Material System Cleanup | Pending |
 | 40a: Animation Pipeline Cleanup | Pending |
 | 45a: Particle System Cleanup | Pending |
+| 50a: Tools & Pipeline Cleanup | Pending |
+| 55a: Production Rendering Cleanup | Pending |

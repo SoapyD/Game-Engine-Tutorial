@@ -56,7 +56,8 @@ Every system in that scene is something you build yourself, from the ground up, 
 - **Audio** — 3D positional sound, ambient loops, audio manager
 - **Particles** — physics-driven particles, trails, force fields, data-driven effects
 - **UI** — HUD, menus, font rendering, developer console
-- **Professional practices** — regular refactoring, resource management, data-driven design
+- **Tools** — ImGui debug UI, level editor, Lua scripting, asset pipeline
+- **Professional practices** — regular refactoring, resource management, data-driven design, profiling
 
 ## Course Structure
 
@@ -72,7 +73,9 @@ Ch 26-30 → Rendering         → 30a cleanup
 Ch 31-35 → Visual Fidelity   → 35a cleanup
 Ch 36-40 → Advanced Systems  → 40a cleanup
 Ch 41-45 → Animation & PBR   → 45a cleanup
-Ch 46    → Data-Driven Finale
+Ch 46    → Data-Driven Particles
+Ch 47-50 → Tools & Scripting → 50a cleanup
+Ch 51-55 → Production Render → 55a cleanup
 ```
 
 ---
@@ -183,6 +186,27 @@ Ch 46    → Data-Driven Finale
 |---|---------|----------|
 | 46 | [Data-Driven Particle Effects](Game_Engine_Tutorial_2/Chapter_46_Data_Driven_Particle_Effects.md) | Define particle effects entirely in JSON — emitter shapes, colour/size curves, sub-emitters, and a ParticleEffectManager. The culmination of the particle system. |
 
+## Part 11: Tools & Scripting (Chapters 47-50)
+
+| # | Chapter | Synopsis |
+|---|---------|----------|
+| 47 | [ImGui Debug UI](Game_Engine_Tutorial_2/Chapter_47_ImGui_Debug_UI.md) | Integrate Dear ImGui for runtime entity inspection, system profiling, and registry stats. Build debug windows that let you tweak the game while it runs. |
+| 48 | [Level Editor](Game_Engine_Tutorial_2/Chapter_48_Level_Editor.md) | An in-engine editor with free-fly camera, entity placement via mouse ray casting, transform gizmos, property panels, level save/load, and undo/redo. |
+| 49 | [Lua Scripting](Game_Engine_Tutorial_2/Chapter_49_Lua_Scripting.md) | Embed Lua via sol2 for gameplay scripting and configuration. Bind ECS to Lua, LuaScript components with callbacks, and Lua config files for all tweakable values. |
+| 50 | [Asset Pipeline & Preprocessing](Game_Engine_Tutorial_2/Chapter_50_Asset_Pipeline.md) | Offline asset compiler that converts raw assets to optimised binary formats. Mesh preprocessing, texture compression, asset manifests, and incremental rebuilds. |
+| **50a** | [Tools & Pipeline Cleanup](Game_Engine_Tutorial_2/Chapter_50a_Tools_And_Pipeline_Cleanup.md) | ConfigManager for all tweakable values via Lua, editor state management, script hot-reload with file watching, and asset dependency graph. |
+
+## Part 12: Production Rendering (Chapters 51-55)
+
+| # | Chapter | Synopsis |
+|---|---------|----------|
+| 51 | [Level of Detail](Game_Engine_Tutorial_2/Chapter_51_Level_Of_Detail.md) | Discrete LOD with distance-based mesh swapping, hysteresis to prevent flickering, cross-fade dithering, billboard impostors, and LOD-aware frustum culling. |
+| 52 | [Deferred Rendering](Game_Engine_Tutorial_2/Chapter_52_Deferred_Rendering.md) | G-buffer with multiple render targets, geometry and lighting passes, light volumes with stencil tricks, forward pass for transparency, and PBR integration. |
+| 53 | [SSAO](Game_Engine_Tutorial_2/Chapter_53_SSAO.md) | Screen-space ambient occlusion using G-buffer depth and normals. Hemisphere sampling, noise texture, blur pass, and integration with the deferred lighting ambient term. |
+| 54 | [Anti-Aliasing](Game_Engine_Tutorial_2/Chapter_54_Anti_Aliasing.md) | Three AA techniques: MSAA (hardware), FXAA (post-process edge smoothing), and TAA (temporal with jitter, motion vectors, and history blending). |
+| 55 | [Profiling & Optimisation](Game_Engine_Tutorial_2/Chapter_55_Profiling_And_Optimisation.md) | CPU and GPU profiling, ImGui overlay with frame graphs, draw call analysis, memory budgets, bottleneck identification, and a review of every optimisation technique in the series. |
+| **55a** | [Production Rendering Cleanup](Game_Engine_Tutorial_2/Chapter_55a_Production_Rendering_Cleanup.md) | LOD-aware instanced rendering, tiled light culling, render pipeline configuration with quality presets (Low/Medium/High/Ultra), and the final architecture review. |
+
 ---
 
 ## Prerequisites
@@ -206,4 +230,7 @@ Ch 46    → Data-Driven Finale
 | **ENet** | Networking (UDP) |
 | **FreeType** | Font rasterisation |
 | **nlohmann/json** | Data file loading |
+| **Dear ImGui** | Debug UI and editor |
+| **sol2** | Lua scripting bindings |
+| **Lua 5.4** | Scripting and configuration |
 | **CMake** | Build system |
