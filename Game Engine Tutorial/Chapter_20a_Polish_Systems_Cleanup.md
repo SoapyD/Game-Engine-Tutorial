@@ -843,8 +843,8 @@ while (!window.shouldClose())
 	fixedTimestep.accumulate();
 
 	// -- Phase: Input --
-	window.pollEvents();
 	input.update();
+	window.pollEvents();
 	inputSystem(registry);
 
 	// -- Phase: Physics (fixed timestep) --

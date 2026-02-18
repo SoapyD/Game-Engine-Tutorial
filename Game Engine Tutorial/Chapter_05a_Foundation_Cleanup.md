@@ -935,8 +935,8 @@ int main()
 		deltaTime = currentFrame - lastFrame;
 		lastFrame = currentFrame;
 
-		window.pollEvents();
 		input.update();
+		window.pollEvents();
 
 		// ─── Input ───────────────────────────────────────────
 		if (input.isKeyPressed(GLFW_KEY_ESCAPE))

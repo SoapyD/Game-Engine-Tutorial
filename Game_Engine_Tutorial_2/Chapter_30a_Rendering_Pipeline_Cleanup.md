@@ -1297,8 +1297,8 @@ int main()
         fixedTimestep.accumulate();
 
         // -- Phase: Input --
-        window.pollEvents();
         input.update();
+        window.pollEvents();
 
         // -- Phase: Physics --
         while (fixedTimestep.step())
