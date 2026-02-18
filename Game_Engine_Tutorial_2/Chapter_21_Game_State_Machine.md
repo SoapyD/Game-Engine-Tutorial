@@ -320,16 +320,18 @@ This is what QEngine does now, wrapped in a state:
 #pragma once
 
 #include "engine/core/game_state.h"
+#include "engine/core/fixed_timestep.h"
 #include "engine/renderer/camera.h"
 #include <entt/entt.hpp>
 
 class Window;
+class InputManager;
 class AudioManager;
 
 class PlayingState : public GameState {
 public:
     PlayingState(entt::registry& registry, Window& window,
-                  AudioManager& audio, Camera& camera);
+                  InputManager& input, AudioManager& audio, Camera& camera);
 
     void enter() override;
     void exit() override;
@@ -343,8 +345,10 @@ public:
 private:
     entt::registry& m_registry;
     Window& m_window;
+    InputManager& m_input;
     AudioManager& m_audio;
     Camera& m_camera;
+    FixedTimestep m_fixedTimestep;
 };
 ```
 
@@ -353,6 +357,7 @@ private:
 #include "game/states/playing_state.h"
 #include "game/states/pause_state.h"
 #include "engine/core/window.h"
+#include "engine/core/input_manager.h"
 #include "engine/core/game_state_manager.h"
 
 // Include all your system headers
@@ -362,11 +367,15 @@ private:
 #include "engine/ecs/systems/ai_system.h"
 #include "engine/ecs/systems/render_system.h"
 #include "engine/ecs/systems/audio_system.h"
+#include "engine/ecs/systems/hud_system.h"
 // ... etc.
 
 PlayingState::PlayingState(entt::registry& registry, Window& window,
-                            AudioManager& audio, Camera& camera)
-    : m_registry(registry), m_window(window), m_audio(audio), m_camera(camera) {}
+                            InputManager& input, AudioManager& audio,
+                            Camera& camera)
+    : m_registry(registry), m_window(window), m_input(input),
+      m_audio(audio), m_camera(camera),
+      m_fixedTimestep(registry.ctx().get<PhysicsConfig>().fixedDeltaTime) {}
 
 void PlayingState::enter() {
     // Lock cursor for FPS controls
@@ -389,22 +398,33 @@ void PlayingState::resume() {
 }
 
 void PlayingState::update(float dt) {
-    // Check for pause
-    if (glfwGetKey(m_window.getHandle(), GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+    // Check for pause (using InputManager from Chapter 5a)
+    if (m_input.isKeyPressed(GLFW_KEY_ESCAPE)) {
         m_stateManager->pushState(std::make_unique<PauseState>(
-            m_registry, m_window));
+            m_registry, m_window, m_input));
         return;  // Don't process game logic this frame
     }
 
-    // All your existing game systems run here
-    inputSystem(m_registry, m_window, m_camera, dt);
+    // -- Phase: Input --
+    m_input.update();
+    inputSystem(m_registry);
+
+    // -- Phase: Physics (fixed timestep from Chapter 10a) --
+    m_fixedTimestep.accumulate();
+    while (m_fixedTimestep.step()) {
+        gravitySystem(m_registry);
+        movementSystem(m_registry);
+        collisionSystem(m_registry);
+        jumpSystem(m_registry);
+    }
+
+    // -- Phase: GameLogic --
     aiSystem(m_registry, dt);
-    physicsSystem(m_registry, dt);
-    combatSystem(m_registry, dt);
+    combatSystem(m_registry, m_registry.ctx().get<Level>(), dt);
     triggerSystem(m_registry);
     pickupSystem(m_registry);
+    hudUpdateSystem(m_registry, dt);
     audioSystem(m_registry, m_audio, m_camera, dt);
-    // ... all other systems from your game loop
 }
 
 void PlayingState::render() {

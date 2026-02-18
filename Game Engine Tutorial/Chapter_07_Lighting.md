@@ -375,7 +375,7 @@ void renderSystem(entt::registry& registry, const Camera& camera,
 
 ## Creating Light Entities
 
-In `main.cpp`:
+In your scene setup function (the `setupScene()` we created in Chapter 5a):
 
 ```cpp
     // Sun light

@@ -633,11 +633,13 @@ triggerShake(shake, std::max(0.0f, 1.0f - dist / 20.0f) * 0.5f, 0.3f);
 
 // Player took damage:
 triggerShake(shake, 0.2f, 0.15f);
-damageFlash.timer = damageFlash.duration;
+auto& flash = registry.get<DamageFlash>(player);
+flash.timer = flash.duration;
 
 // Player picked up item:
 registry.emplace_or_replace<PlaySoundOnce>(player, "pickup_health", 0.8f);
-addHUDMessage(hud, "Picked up Health +50");
+auto& hudMessages = registry.get<HUDMessages>(player);
+hudMessages.add("Picked up Health +50");
 
 // Enemy died:
 emitExplosion(particles, enemyPos);  // Or blood particles

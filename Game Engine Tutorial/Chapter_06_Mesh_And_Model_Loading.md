@@ -548,86 +548,145 @@ Mesh createBox(float width, float height, float depth) {
 
 ---
 
-## Resource Management Basics
+## Extending the ResourceManager for Meshes
 
-Multiple entities might use the same mesh (e.g. 50 crates all using the same cube mesh). We shouldn't load it 50 times. A simple approach:
+Multiple entities might use the same mesh (e.g. 50 crates all using the same cube mesh). We shouldn't load it 50 times. In Chapter 5a, we built a `ResourceManager` that caches shaders and textures. The same pattern works for meshes.
+
+Add mesh caching to `ResourceManager`:
+
+### Updated engine/core/resource_manager.h
+
+Add the following alongside the existing shader and texture methods:
 
 ```cpp
-// Store loaded meshes by name
-std::unordered_map<std::string, std::shared_ptr<Mesh>> meshCache;
+#include "engine/renderer/mesh.h"
 
-std::shared_ptr<Mesh> getMesh(const std::string& name) {
-    auto it = meshCache.find(name);
-    if (it != meshCache.end()) {
-        return it->second;
-    }
-    return nullptr;  // Not loaded
+// Inside class ResourceManager:
+
+	// ─── Meshes ──────────────────────────────────────────────
+	// Load a mesh from an OBJ file (or return the cached version)
+	std::shared_ptr<Mesh> getMesh(
+		const std::string& name,
+		const std::string& path);
+
+	// Store a procedurally generated mesh
+	void storeMesh(const std::string& name, std::shared_ptr<Mesh> mesh);
+
+	// Retrieve a previously loaded mesh by name
+	std::shared_ptr<Mesh> getMesh(const std::string& name) const;
+
+// Add to the private section:
+	std::unordered_map<std::string, std::shared_ptr<Mesh>> m_meshes;
+```
+
+### Updated engine/core/resource_manager.cpp
+
+Add the mesh methods:
+
+```cpp
+std::shared_ptr<Mesh> ResourceManager::getMesh(
+	const std::string& name,
+	const std::string& path)
+{
+	auto it = m_meshes.find(name);
+	if (it != m_meshes.end())
+	{
+		return it->second;
+	}
+
+	auto mesh = std::make_shared<Mesh>(loadOBJ(path));
+	m_meshes[name] = mesh;
+	std::cout << "ResourceManager: cached mesh '" << name << "'" << std::endl;
+	return mesh;
 }
 
-void storeMesh(const std::string& name, std::shared_ptr<Mesh> mesh) {
-    meshCache[name] = mesh;
+void ResourceManager::storeMesh(const std::string& name, std::shared_ptr<Mesh> mesh)
+{
+	m_meshes[name] = mesh;
+	std::cout << "ResourceManager: cached mesh '" << name << "'" << std::endl;
+}
+
+std::shared_ptr<Mesh> ResourceManager::getMesh(const std::string& name) const
+{
+	auto it = m_meshes.find(name);
+	if (it != m_meshes.end())
+	{
+		return it->second;
+	}
+
+	std::cerr << "ERROR: Mesh '" << name << "' not found in cache" << std::endl;
+	return nullptr;
 }
 ```
 
-### C++ Concept: `std::shared_ptr`
+And update the `clear()` method to also clear meshes:
 
 ```cpp
-std::shared_ptr<Mesh> mesh = std::make_shared<Mesh>(vertices, indices);
+void ResourceManager::clear()
+{
+	m_shaders.clear();
+	m_textures.clear();
+	m_meshes.clear();
+	std::cout << "ResourceManager: all resources cleared" << std::endl;
+}
 ```
 
-A **shared pointer** is a smart pointer with reference counting. Multiple `shared_ptr`s can point to the same object. The object is destroyed when the last `shared_ptr` to it is destroyed.
-
-This is perfect for resources: 50 entities can share the same mesh, and it's automatically cleaned up when no one references it anymore.
-
-```cpp
-auto mesh = std::make_shared<Mesh>(loadOBJ("cube.obj"));  // ref count: 1
-auto copy = mesh;    // ref count: 2
-copy = nullptr;      // ref count: 1
-mesh = nullptr;      // ref count: 0 → Mesh is destroyed
-```
-
-For now we'll keep resource management simple. A full resource manager is a later concern.
+This follows the exact same pattern we used for shaders and textures in Chapter 5a — `std::shared_ptr` with reference counting, `std::unordered_map` for O(1) lookup by name. Now all our assets (shaders, textures, meshes) are managed in one place.
 
 ---
 
 ## Using It All Together
 
-In `main.cpp`, you can now load a model and create an entity:
+With the `ResourceManager` from Chapter 5a now extended for meshes, loading and using models is clean:
 
 ```cpp
-    // Load a mesh from file
-    Mesh crateMesh = loadOBJ("assets/models/crate.obj");
+    // Load a mesh from file via ResourceManager
+    auto crateMesh = resources.getMesh("crate", "assets/models/crate.obj");
 
-    // Or generate one procedurally
-    Mesh boxMesh = createBox(1.0f, 1.0f, 1.0f);
+    // Or generate one procedurally and cache it
+    auto boxMesh = std::make_shared<Mesh>(createBox(1.0f, 1.0f, 1.0f));
+    resources.storeMesh("box", boxMesh);
 
-    // Create entities using the mesh
+    // Get shaders and textures from ResourceManager (loaded in Chapter 5a)
+    auto texturedShader = resources.getShader("textured");
+    auto crateTexture = resources.getTexture("crate",
+        "assets/textures/crate.png");
+
+    // Create entities using cached resources
     auto crate = registry.create();
     registry.emplace<Position>(crate, glm::vec3(0.0f, 0.0f, -3.0f));
-    registry.emplace<MeshRenderer>(crate, boxMesh.getVAO(),
+    registry.emplace<MeshRenderer>(crate, boxMesh->getVAO(),
                                     0u,  // vertexCount (unused with indices)
-                                    texturedShader.getId(),
-                                    crateTexture.getId(),
+                                    texturedShader->getId(),
+                                    crateTexture->getId(),
                                     true,  // useIndices
-                                    boxMesh.getIndexCount());
+                                    boxMesh->getIndexCount());
 ```
+
+Notice that everything goes through `resources` — shaders, textures, and now meshes. If another entity needs the same crate mesh, `resources.getMesh("crate")` returns the cached version instantly.
 
 ---
 
 ## Update CMakeLists.txt
 
+Add the new mesh and OBJ loader files alongside the files from Chapter 5a:
+
 ```cmake
 add_executable(QEngine
     src/main.cpp
+    src/engine/core/input_manager.cpp
+    src/engine/core/mesh_factory.cpp
+    src/engine/core/resource_manager.cpp
     src/engine/core/window.cpp
-    src/engine/renderer/shader.cpp
+    src/engine/ecs/scene_setup.cpp
+    src/engine/ecs/systems/movement_system.cpp
+    src/engine/ecs/systems/render_system.cpp
     src/engine/renderer/camera.cpp
-    src/engine/renderer/texture.cpp
     src/engine/renderer/mesh.cpp
     src/engine/renderer/obj_loader.cpp
+    src/engine/renderer/shader.cpp
     src/engine/renderer/stb_image_impl.cpp
-    src/engine/ecs/systems/render_system.cpp
-    src/engine/ecs/systems/movement_system.cpp
+    src/engine/renderer/texture.cpp
 )
 ```
 

@@ -134,7 +134,7 @@ A trigger entity has `Position`, `AABBCollider` (with `isTrigger = true`), and `
 
 #include <entt/entt.hpp>
 
-void triggerSystem(entt::registry& registry, float dt);
+void triggerSystem(entt::registry& registry);
 ```
 
 ### src/engine/ecs/systems/trigger_system.cpp
@@ -143,8 +143,11 @@ void triggerSystem(entt::registry& registry, float dt);
 #include "engine/ecs/systems/trigger_system.h"
 #include "engine/ecs/components.h"
 #include "engine/physics/aabb.h"
+#include "engine/physics/physics_config.h"
 
-void triggerSystem(entt::registry& registry, float dt) {
+void triggerSystem(entt::registry& registry) {
+    const auto& config = registry.ctx().get<PhysicsConfig>();
+    float dt = config.fixedDeltaTime;
     auto triggerView = registry.view<Position, AABBCollider, TriggerVolume>();
 
     for (auto [trigEntity, trigPos, trigCol, trigger] : triggerView.each()) {
@@ -244,7 +247,7 @@ This system handles the actual movement of doors, lifts, and any other moving ge
 
 #include <entt/entt.hpp>
 
-void moverSystem(entt::registry& registry, float dt);
+void moverSystem(entt::registry& registry);
 ```
 
 ### src/engine/ecs/systems/mover_system.cpp
@@ -252,8 +255,11 @@ void moverSystem(entt::registry& registry, float dt);
 ```cpp
 #include "engine/ecs/systems/mover_system.h"
 #include "engine/ecs/components.h"
+#include "engine/physics/physics_config.h"
 
-void moverSystem(entt::registry& registry, float dt) {
+void moverSystem(entt::registry& registry) {
+    const auto& config = registry.ctx().get<PhysicsConfig>();
+    float dt = config.fixedDeltaTime;
     auto view = registry.view<Position, Mover>();
 
     for (auto [entity, pos, mover] : view.each()) {
