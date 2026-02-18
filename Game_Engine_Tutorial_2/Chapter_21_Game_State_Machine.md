@@ -450,7 +450,7 @@ class Window;
 
 class PauseState : public GameState {
 public:
-    PauseState(entt::registry& registry, Window& window);
+    PauseState(entt::registry& registry, Window& window, InputManager& input);
 
     void enter() override;
     void update(float dt) override;
@@ -462,6 +462,7 @@ public:
 private:
     entt::registry& m_registry;
     Window& m_window;
+    InputManager& m_input;
     int m_selectedOption = 0;
     bool m_escapeReleased = false;  // Prevent immediate unpause
 
@@ -476,10 +477,11 @@ private:
 // src/game/states/pause_state.cpp
 #include "game/states/pause_state.h"
 #include "engine/core/window.h"
+#include "engine/core/input_manager.h"
 #include "engine/core/game_state_manager.h"
 
-PauseState::PauseState(entt::registry& registry, Window& window)
-    : m_registry(registry), m_window(window) {}
+PauseState::PauseState(entt::registry& registry, Window& window, InputManager& input)
+    : m_registry(registry), m_window(window), m_input(input) {}
 
 void PauseState::enter() {
     m_escapeReleased = false;
@@ -489,14 +491,14 @@ void PauseState::enter() {
 void PauseState::update(float dt) {
     // Wait for Escape to be released before accepting it again
     if (!m_escapeReleased) {
-        if (glfwGetKey(m_window.getHandle(), GLFW_KEY_ESCAPE) == GLFW_RELEASE) {
+        if (m_input.isKeyReleased(GLFW_KEY_ESCAPE)) {
             m_escapeReleased = true;
         }
         return;
     }
 
     // Unpause with Escape
-    if (glfwGetKey(m_window.getHandle(), GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+    if (m_input.isKeyPressed(GLFW_KEY_ESCAPE)) {
         m_stateManager->popState();  // Remove pause, resume playing
         return;
     }
@@ -507,11 +509,11 @@ void PauseState::update(float dt) {
     static bool downPressed = false;
     static bool enterPressed = false;
 
-    bool upNow = glfwGetKey(m_window.getHandle(), GLFW_KEY_UP) == GLFW_PRESS ||
-                 glfwGetKey(m_window.getHandle(), GLFW_KEY_W) == GLFW_PRESS;
-    bool downNow = glfwGetKey(m_window.getHandle(), GLFW_KEY_DOWN) == GLFW_PRESS ||
-                   glfwGetKey(m_window.getHandle(), GLFW_KEY_S) == GLFW_PRESS;
-    bool enterNow = glfwGetKey(m_window.getHandle(), GLFW_KEY_ENTER) == GLFW_PRESS;
+    bool upNow = m_input.isKeyPressed(GLFW_KEY_UP) ||
+                 m_input.isKeyPressed(GLFW_KEY_W);
+    bool downNow = m_input.isKeyPressed(GLFW_KEY_DOWN) ||
+                   m_input.isKeyPressed(GLFW_KEY_S);
+    bool enterNow = m_input.isKeyPressed(GLFW_KEY_ENTER);
 
     if (upNow && !upPressed) {
         m_selectedOption = (m_selectedOption - 1 + OPTION_COUNT) % OPTION_COUNT;
@@ -559,7 +561,7 @@ void PauseState::render() {
             : glm::vec4(0.8f, 0.8f, 0.8f, 1.0f);   // Grey = unselected
 
         // renderText(options[i], centerX, startY + i * 40.0f, colour);
-        // Use the BitmapFont system from Chapter 15
+        // Use the TextRenderer from Chapter 15a
     }
 
     glDisable(GL_BLEND);
@@ -576,23 +578,32 @@ The game loop becomes much cleaner:
 
 ```cpp
 #include "engine/core/window.h"
+#include "engine/core/input_manager.h"
+#include "engine/core/resource_manager.h"
 #include "engine/core/game_state_manager.h"
 #include "engine/audio/audio_manager.h"
 #include "engine/renderer/camera.h"
+#include "engine/physics/physics_config.h"
 #include "game/states/main_menu_state.h"  // Chapter 22
 
 int main() {
     Window window(1280, 720, "QEngine");
+    InputManager input;
+    input.init(window.getHandle());
+    ResourceManager resources;
+
     AudioManager audio;
     audio.init();
 
     entt::registry registry;
+    registry.ctx().emplace<PhysicsConfig>();
+
     Camera camera;
     GameStateManager stateManager;
 
     // Start at the main menu
     stateManager.pushState(std::make_unique<MainMenuState>(
-        registry, window, audio, camera, stateManager));
+        registry, window, input, audio, camera, stateManager));
 
     float lastFrame = 0.0f;
 

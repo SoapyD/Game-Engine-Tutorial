@@ -555,7 +555,7 @@ Human-readable. You can edit save files in a text editor for debugging.
 void PlayingState::update(float dt) {
     // Quick save with F5
     static bool f5Pressed = false;
-    bool f5Now = glfwGetKey(m_window.getHandle(), GLFW_KEY_F5) == GLFW_PRESS;
+    bool f5Now = m_input.isKeyPressed(GLFW_KEY_F5);
     if (f5Now && !f5Pressed) {
         SaveSystem::saveGame(m_registry, m_currentMap, m_playTime, 0);
         // Show "Game Saved" message on HUD (fade out over 2 seconds)
@@ -564,7 +564,7 @@ void PlayingState::update(float dt) {
 
     // Quick load with F9
     static bool f9Pressed = false;
-    bool f9Now = glfwGetKey(m_window.getHandle(), GLFW_KEY_F9) == GLFW_PRESS;
+    bool f9Now = m_input.isKeyPressed(GLFW_KEY_F9);
     if (f9Now && !f9Pressed) {
         std::string mapName;
         float playTime;
