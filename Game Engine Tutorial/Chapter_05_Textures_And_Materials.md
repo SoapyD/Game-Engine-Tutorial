@@ -352,7 +352,59 @@ void renderSystem(entt::registry& registry, const Camera& camera,
 
 ---
 
-## Creating a Textured Quad
+## Updating main.cpp
+
+All of the following changes go in `main.cpp`. We'll add a textured quad alongside the existing coloured triangle, so you can see both rendering systems working together.
+
+### Include the Texture Header
+
+At the top of `main.cpp`, add the new include alongside the existing ones:
+
+```cpp
+#include "engine/renderer/texture.h"   // NEW
+```
+
+### Add the Textured Shader
+
+In `main.cpp`, right after the existing `basicShader` declaration, add the textured shader:
+
+```cpp
+// ─── Shaders ─────────────────────────────────────────────────
+Shader basicShader(
+    "assets/shaders/basic.vert",
+    "assets/shaders/basic.frag"
+);
+
+Shader texturedShader(                                      // NEW
+    "assets/shaders/textured.vert",                         // NEW
+    "assets/shaders/textured.frag"                          // NEW
+);                                                          // NEW
+```
+
+### Add the Texture
+
+Right after the shader declarations, load the texture:
+
+```cpp
+// ─── Textures ────────────────────────────────────────────────
+Texture wallTexture("assets/textures/wall.png");            // NEW
+```
+
+Place any PNG or JPG image at `assets/textures/wall.png` relative to your project root. The folder structure should look like:
+
+```
+QEngine/
+  assets/
+    shaders/
+      basic.vert
+      basic.frag
+      textured.vert    ← new
+      textured.frag    ← new
+    textures/
+      wall.png         ← any image (PNG or JPG)
+```
+
+### Quad Vertex Data with UVs
 
 A quad (rectangle) is the basic surface for walls and floors. It's two triangles:
 
@@ -366,9 +418,10 @@ A quad (rectangle) is the basic surface for walls and floors. It's two triangles
 (0,0)───────(1,0)
 ```
 
-### Vertex Data with UVs
+Add this vertex data right after your existing triangle `vertices[]` array:
 
 ```cpp
+// ─── Quad vertex data (textured) ─────────────────────────────
 float quadVertices[] = {
     // Positions          // UV coords
     -0.5f, -0.5f, 0.0f,  0.0f, 0.0f,  // Bottom-left
@@ -383,9 +436,12 @@ float quadVertices[] = {
 
 Notice: 6 vertices for 2 triangles, but 2 vertices are duplicated (bottom-left and top-right appear twice). This wastes memory. In Chapter 6, we'll use **index buffers** to fix this.
 
-### Setting Up the VAO
+### Setting Up the Quad VAO
+
+Add this right after the existing triangle VAO/VBO setup (after `glBindVertexArray(0)`):
 
 ```cpp
+// ─── Create quad VAO and VBO ─────────────────────────────────
 unsigned int quadVAO, quadVBO;
 glGenVertexArrays(1, &quadVAO);
 glGenBuffers(1, &quadVBO);
@@ -406,19 +462,26 @@ glEnableVertexAttribArray(1);
 glBindVertexArray(0);
 ```
 
-### Creating the Entity
+### Creating the Textured Entity
+
+Add this in the ECS entity creation section, after the existing triangle entities:
 
 ```cpp
-Shader texturedShader("assets/shaders/textured.vert", "assets/shaders/textured.frag");
-Texture wallTexture("assets/textures/wall.png");
-
+// create a textured wall quad
 auto wall = registry.create();
 registry.emplace<Position>(wall, glm::vec3(0.0f, 0.0f, -2.0f));
 registry.emplace<MeshRenderer>(wall, quadVAO, 6u, texturedShader.getId(),
                                 wallTexture.getId(), false, 0u);
 ```
 
-Place any PNG or JPG image as `assets/textures/wall.png` and you'll see it on the quad.
+### Cleaning Up the Quad Buffers
+
+At the end of `main()`, alongside the existing cleanup, add:
+
+```cpp
+glDeleteVertexArrays(1, &quadVAO);   // NEW
+glDeleteBuffers(1, &quadVBO);         // NEW
+```
 
 ---
 
