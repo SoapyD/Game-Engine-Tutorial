@@ -27,7 +27,7 @@ Let us look at what a typical `main.cpp` game loop looks like after Chapter 10. 
 
 ```cpp
 // main.cpp - after Chapter 10
-// ... includes, window setup, registry creation ...
+// ... includes, window/input/resource setup from Chapter 5a ...
 
 // Magic numbers at file scope
 constexpr uint32_t LAYER_PLAYER     = 0x01;
@@ -37,18 +37,22 @@ constexpr uint32_t LAYER_PROJECTILE = 0x08;
 
 int main()
 {
-	// ... window and OpenGL setup ...
+	Window window(1280, 720, "QEngine");
+	InputManager input;
+	input.init(window.getHandle());
+	ResourceManager resources;
+
+	// ... resource loading, mesh creation ...
 
 	entt::registry registry;
-
-	// ... entity creation ...
+	setupScene(registry, /* ... */);
 
 	// Fixed timestep variables scattered in main
 	const float fixedDeltaTime = 1.0f / 60.0f;
 	float accumulator = 0.0f;
 	auto previousTime = std::chrono::high_resolution_clock::now();
 
-	while (!glfwWindowShouldClose(window))
+	while (!window.shouldClose())
 	{
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float deltaTime = std::chrono::duration<float>(currentTime - previousTime).count();
@@ -60,7 +64,8 @@ int main()
 
 		accumulator += deltaTime;
 
-		glfwPollEvents();
+		window.pollEvents();
+		input.update();
 		inputSystem(registry);
 
 		while (accumulator >= fixedDeltaTime)
@@ -78,7 +83,7 @@ int main()
 
 		renderSystem(registry, alpha);
 
-		glfwSwapBuffers(window);
+		window.swapBuffers();
 	}
 
 	// ... cleanup ...
@@ -518,6 +523,10 @@ Now let us put it all together. Here is the refactored game loop:
 ```cpp
 // main.cpp - after cleanup
 
+#include "engine/core/window.h"
+#include "engine/core/input_manager.h"
+#include "engine/core/resource_manager.h"
+#include "engine/core/mesh_factory.h"
 #include "engine/core/fixed_timestep.h"
 #include "engine/core/system_phase.h"
 #include "engine/physics/physics_config.h"
@@ -527,7 +536,12 @@ Now let us put it all together. Here is the refactored game loop:
 
 int main()
 {
-	// ... window and OpenGL setup ...
+	Window window(1280, 720, "QEngine");
+	InputManager input;
+	input.init(window.getHandle());
+	ResourceManager resources;
+
+	// ... resource loading, mesh creation ...
 
 	entt::registry registry;
 
@@ -538,8 +552,7 @@ int main()
 	// physicsConfig.airControl = 0.5f; // more air control
 
 	// --- Entity creation ---
-	auto player = registry.create();
-	// ...
+	setupScene(registry, /* ... */);
 	auto& playerCollider = registry.emplace<BoxCollider>(player);
 	playerCollider.layer = CollisionLayers::Player;
 	playerCollider.mask  = CollisionLayers::World | CollisionLayers::Enemy | CollisionLayers::Trigger;
@@ -547,12 +560,13 @@ int main()
 	// --- Game loop ---
 	FixedTimestep fixedTimestep(physicsConfig.fixedDeltaTime);
 
-	while (!glfwWindowShouldClose(window))
+	while (!window.shouldClose())
 	{
 		fixedTimestep.accumulate();
 
 		// -- Phase: Input --
-		glfwPollEvents();
+		window.pollEvents();
+		input.update();
 		inputSystem(registry);
 
 		// -- Phase: Physics (fixed timestep) --
@@ -573,7 +587,7 @@ int main()
 		// -- Phase: Render --
 		renderSystem(registry, fixedTimestep.getAlpha());
 
-		glfwSwapBuffers(window);
+		window.swapBuffers();
 	}
 
 	// ... cleanup ...

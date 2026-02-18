@@ -455,7 +455,7 @@ The audio system sees it has a looping `AudioSource` and starts it. As the playe
 
 ---
 
-## Loading Sounds in main.cpp
+## Loading Sounds at Startup
 
 ```cpp
 AudioManager audio;

@@ -691,7 +691,7 @@ public:
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // Draw "Loading <level>..." using BitmapFont (Ch 15 / Ch 30)
+        // Draw "Loading <level>..." using TextRenderer (Ch 15a / Ch 30)
         // float centerX = screenWidth / 2.0f;
         // float centerY = screenHeight / 2.0f;
         // std::string text = "Loading " + m_levelName + "...";

@@ -27,6 +27,7 @@ The main menu is the first thing the player sees. It needs to:
 #include <entt/entt.hpp>
 
 class Window;
+class InputManager;
 class AudioManager;
 class Camera;
 class GameStateManager;
@@ -34,8 +35,8 @@ class GameStateManager;
 class MainMenuState : public GameState {
 public:
     MainMenuState(entt::registry& registry, Window& window,
-                   AudioManager& audio, Camera& camera,
-                   GameStateManager& stateManager);
+                   InputManager& input, AudioManager& audio,
+                   Camera& camera, GameStateManager& stateManager);
 
     void enter() override;
     void update(float dt) override;
@@ -46,6 +47,7 @@ public:
 private:
     entt::registry& m_registry;
     Window& m_window;
+    InputManager& m_input;
     AudioManager& m_audio;
     Camera& m_camera;
     GameStateManager& m_stateManager;
@@ -74,13 +76,14 @@ private:
 #include "game/states/loading_state.h"
 #include "game/states/settings_state.h"
 #include "engine/core/window.h"
+#include "engine/core/input_manager.h"
 #include "engine/core/game_state_manager.h"
 
 MainMenuState::MainMenuState(entt::registry& registry, Window& window,
-                              AudioManager& audio, Camera& camera,
-                              GameStateManager& stateManager)
-    : m_registry(registry), m_window(window), m_audio(audio),
-      m_camera(camera), m_stateManager(stateManager) {}
+                              InputManager& input, AudioManager& audio,
+                              Camera& camera, GameStateManager& stateManager)
+    : m_registry(registry), m_window(window), m_input(input),
+      m_audio(audio), m_camera(camera), m_stateManager(stateManager) {}
 
 void MainMenuState::enter() {
     m_selectedOption = 0;
@@ -93,13 +96,13 @@ void MainMenuState::enter() {
 void MainMenuState::update(float dt) {
     m_time += dt;
 
-    // ─── Keyboard navigation ────────────────────────────────────
-    bool upNow = glfwGetKey(m_window.getHandle(), GLFW_KEY_UP) == GLFW_PRESS ||
-                 glfwGetKey(m_window.getHandle(), GLFW_KEY_W) == GLFW_PRESS;
-    bool downNow = glfwGetKey(m_window.getHandle(), GLFW_KEY_DOWN) == GLFW_PRESS ||
-                   glfwGetKey(m_window.getHandle(), GLFW_KEY_S) == GLFW_PRESS;
-    bool enterNow = glfwGetKey(m_window.getHandle(), GLFW_KEY_ENTER) == GLFW_PRESS;
-    bool escapeNow = glfwGetKey(m_window.getHandle(), GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    // ─── Keyboard navigation (using InputManager from Chapter 5a) ─
+    bool upNow = m_input.isKeyPressed(GLFW_KEY_UP) ||
+                 m_input.isKeyPressed(GLFW_KEY_W);
+    bool downNow = m_input.isKeyPressed(GLFW_KEY_DOWN) ||
+                   m_input.isKeyPressed(GLFW_KEY_S);
+    bool enterNow = m_input.isKeyPressed(GLFW_KEY_ENTER);
+    bool escapeNow = m_input.isKeyPressed(GLFW_KEY_ESCAPE);
 
     // Edge detection — only trigger on press, not hold
     if (upNow && !m_keyStates[0]) {
@@ -118,7 +121,7 @@ void MainMenuState::update(float dt) {
                 return;
             case OPTION_SETTINGS:
                 m_stateManager.pushState(std::make_unique<SettingsState>(
-                    m_window, m_audio));
+                    m_window, m_input, m_audio));
                 return;
             case OPTION_QUIT:
                 m_stateManager.clearStates();
@@ -169,7 +172,7 @@ void MainMenuState::render() {
 
     // ─── Title ──────────────────────────────────────────────────
     // Render "QENGINE" in large text
-    // Use BitmapFont from Chapter 15:
+    // Use TextRenderer from Chapter 15a:
     // font.renderText("QENGINE", centerX, titleY, 3.0f, glm::vec4(1.0f));
 
     // ─── Menu Options ───────────────────────────────────────────
@@ -395,7 +398,7 @@ struct GameSettings {
 
 class SettingsState : public GameState {
 public:
-    SettingsState(Window& window, AudioManager& audio);
+    SettingsState(Window& window, InputManager& input, AudioManager& audio);
 
     void enter() override;
     void update(float dt) override;
@@ -409,6 +412,7 @@ public:
 
 private:
     Window& m_window;
+    InputManager& m_input;
     AudioManager& m_audio;
 
     int m_selectedOption = 0;
@@ -437,8 +441,8 @@ private:
 
 GameSettings SettingsState::settings;  // Static member definition
 
-SettingsState::SettingsState(Window& window, AudioManager& audio)
-    : m_window(window), m_audio(audio) {}
+SettingsState::SettingsState(Window& window, InputManager& input, AudioManager& audio)
+    : m_window(window), m_input(input), m_audio(audio) {}
 
 void SettingsState::enter() {
     m_selectedOption = 0;
@@ -447,24 +451,24 @@ void SettingsState::enter() {
 
 void SettingsState::update(float dt) {
     if (!m_escapeReleased) {
-        if (glfwGetKey(m_window.getHandle(), GLFW_KEY_ESCAPE) == GLFW_RELEASE) {
+        if (m_input.isKeyReleased(GLFW_KEY_ESCAPE)) {
             m_escapeReleased = true;
         }
         return;
     }
 
     // Back with Escape
-    if (glfwGetKey(m_window.getHandle(), GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+    if (m_input.isKeyPressed(GLFW_KEY_ESCAPE)) {
         m_stateManager->popState();
         return;
     }
 
     // Navigation (with debounce)
     static bool keys[4] = {};
-    bool up = glfwGetKey(m_window.getHandle(), GLFW_KEY_UP) == GLFW_PRESS;
-    bool down = glfwGetKey(m_window.getHandle(), GLFW_KEY_DOWN) == GLFW_PRESS;
-    bool left = glfwGetKey(m_window.getHandle(), GLFW_KEY_LEFT) == GLFW_PRESS;
-    bool right = glfwGetKey(m_window.getHandle(), GLFW_KEY_RIGHT) == GLFW_PRESS;
+    bool up = m_input.isKeyPressed(GLFW_KEY_UP);
+    bool down = m_input.isKeyPressed(GLFW_KEY_DOWN);
+    bool left = m_input.isKeyPressed(GLFW_KEY_LEFT);
+    bool right = m_input.isKeyPressed(GLFW_KEY_RIGHT);
 
     if (up && !keys[0]) m_selectedOption = (m_selectedOption - 1 + OPT_COUNT) % OPT_COUNT;
     if (down && !keys[1]) m_selectedOption = (m_selectedOption + 1) % OPT_COUNT;
