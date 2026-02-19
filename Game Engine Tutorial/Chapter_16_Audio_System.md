@@ -445,9 +445,9 @@ A torch that crackles, a computer that hums, lava that bubbles:
 
 ```cpp
 auto torch = registry.create();
-registry.emplace<Position>(torch, glm::vec3(3.0f, 2.0f, -5.0f));
-registry.emplace<PointLight>(torch, glm::vec3(1.0f, 0.7f, 0.3f),
-                              0.05f, 0.09f, 0.032f);
+registry.emplace<Position>(torch, glm::vec3(3.0f, 2.0f, -1.0f));
+registry.emplace<PointLight>(torch, glm::vec3(2.0f, 1.4f, 0.6f),
+                              0.15f, 0.045f, 0.0075f);
 registry.emplace<AudioSource>(torch, "torch_crackle", true, true, 0.5f, -1, false);
 ```
 

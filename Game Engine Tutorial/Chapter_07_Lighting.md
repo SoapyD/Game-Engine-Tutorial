@@ -115,6 +115,8 @@ The normal matrix (`mat3(transpose(inverse(model)))`) counteracts this distortio
 
 ### assets/shaders/lit.frag
 
+Each light type gets its own set of uniforms so they don't overwrite each other. The shader computes each light's contribution independently and sums them — this is how real-time lighting works: **light contributions are additive**.
+
 ```glsl
 #version 460 core
 
@@ -126,58 +128,70 @@ out vec4 FragColor;
 
 // Material
 uniform sampler2D textureSampler;
-uniform float shininess;      // 32.0 is a reasonable default
+uniform float shininess;          // 32.0 is a reasonable default
 
-// Light properties
-uniform vec3 lightPos;        // Position of the light (point light)
-uniform vec3 lightColor;      // Color/intensity of the light
-uniform vec3 lightDir;        // Direction (for directional light)
-uniform int lightType;        // 0 = directional, 1 = point
+// Directional light
+uniform vec3 dirLightDir;         // Direction the light points
+uniform vec3 dirLightColor;       // Color/intensity
+uniform float dirLightAmbient;    // Ambient strength
+uniform bool hasDirLight;         // Is there a directional light?
+
+// Point light
+uniform vec3 pointLightPos;       // World-space position
+uniform vec3 pointLightColor;     // Color/intensity
+uniform float pointLightAmbient;  // Ambient strength
+uniform bool hasPointLight;       // Is there a point light?
 
 // Camera
-uniform vec3 viewPos;         // Camera position (for specular)
-
-// Ambient
-uniform float ambientStrength;
+uniform vec3 viewPos;             // Camera position (for specular)
 
 void main() {
     vec3 texColor = texture(textureSampler, TexCoord).rgb;
     vec3 norm = normalize(Normal);
+    vec3 viewDir = normalize(viewPos - FragPos);
 
-    // ─── Calculate light direction ───────────────────────────────
-    vec3 lDir;
-    float attenuation = 1.0;
+    vec3 result = vec3(0.0);
 
-    if (lightType == 0) {
-        // Directional light (e.g. sun) — light comes from a fixed direction
-        lDir = normalize(-lightDir);
-    } else {
-        // Point light — light radiates from a position
-        lDir = normalize(lightPos - FragPos);
+    // ─── Directional light contribution ──────────────────────────
+    if (hasDirLight) {
+        vec3 lDir = normalize(-dirLightDir);
 
-        // Attenuation: light gets weaker with distance
-        float distance = length(lightPos - FragPos);
-        attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance);
+        vec3 ambient = dirLightAmbient * dirLightColor;
+
+        float diff = max(dot(norm, lDir), 0.0);
+        vec3 diffuse = diff * dirLightColor;
+
+        vec3 reflectDir = reflect(-lDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
+        vec3 specular = spec * dirLightColor;
+
+        result += (ambient + diffuse + specular) * texColor;
     }
 
-    // ─── Ambient ─────────────────────────────────────────────────
-    vec3 ambient = ambientStrength * lightColor;
+    // ─── Point light contribution ────────────────────────────────
+    if (hasPointLight) {
+        vec3 lDir = normalize(pointLightPos - FragPos);
 
-    // ─── Diffuse ─────────────────────────────────────────────────
-    float diff = max(dot(norm, lDir), 0.0);
-    vec3 diffuse = diff * lightColor;
+        float distance = length(pointLightPos - FragPos);
+        float attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance);
 
-    // ─── Specular ────────────────────────────────────────────────
-    vec3 viewDir = normalize(viewPos - FragPos);
-    vec3 reflectDir = reflect(-lDir, norm);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
-    vec3 specular = spec * lightColor;
+        vec3 ambient = pointLightAmbient * pointLightColor;
 
-    // ─── Combine ─────────────────────────────────────────────────
-    vec3 result = (ambient + (diffuse + specular) * attenuation) * texColor;
+        float diff = max(dot(norm, lDir), 0.0);
+        vec3 diffuse = diff * pointLightColor;
+
+        vec3 reflectDir = reflect(-lDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
+        vec3 specular = spec * pointLightColor;
+
+        result += (ambient + (diffuse + specular) * attenuation) * texColor;
+    }
+
     FragColor = vec4(result, 1.0);
 }
 ```
+
+Notice how each light block computes its own ambient + diffuse + specular and adds to `result`. If both a sun and a torch are present, you get both contributions. If only one exists, the other block is skipped. This is a fundamental principle: **lighting is additive** — each light source contributes independently.
 
 ---
 
@@ -328,26 +342,27 @@ void renderSystem(entt::registry& registry, const Camera& camera,
         loc = glGetUniformLocation(mesh.shaderId, "shininess");
         glUniform1f(loc, 32.0f);
 
-        // Light uniforms (use directional light, or point light, or both)
+        // Light uniforms — each light type has its own uniform names
+        loc = glGetUniformLocation(mesh.shaderId, "hasDirLight");
+        glUniform1i(loc, hasDirLight ? 1 : 0);
+        loc = glGetUniformLocation(mesh.shaderId, "hasPointLight");
+        glUniform1i(loc, hasPointLight ? 1 : 0);
+
         if (hasDirLight) {
-            loc = glGetUniformLocation(mesh.shaderId, "lightType");
-            glUniform1i(loc, 0);
-            loc = glGetUniformLocation(mesh.shaderId, "lightDir");
+            loc = glGetUniformLocation(mesh.shaderId, "dirLightDir");
             glUniform3fv(loc, 1, &dirLightDir[0]);
-            loc = glGetUniformLocation(mesh.shaderId, "lightColor");
+            loc = glGetUniformLocation(mesh.shaderId, "dirLightColor");
             glUniform3fv(loc, 1, &dirLightColor[0]);
-            loc = glGetUniformLocation(mesh.shaderId, "ambientStrength");
+            loc = glGetUniformLocation(mesh.shaderId, "dirLightAmbient");
             glUniform1f(loc, dirAmbient);
         }
 
         if (hasPointLight) {
-            loc = glGetUniformLocation(mesh.shaderId, "lightType");
-            glUniform1i(loc, 1);
-            loc = glGetUniformLocation(mesh.shaderId, "lightPos");
+            loc = glGetUniformLocation(mesh.shaderId, "pointLightPos");
             glUniform3fv(loc, 1, &pointLightPos[0]);
-            loc = glGetUniformLocation(mesh.shaderId, "lightColor");
+            loc = glGetUniformLocation(mesh.shaderId, "pointLightColor");
             glUniform3fv(loc, 1, &pointLightColor[0]);
-            loc = glGetUniformLocation(mesh.shaderId, "ambientStrength");
+            loc = glGetUniformLocation(mesh.shaderId, "pointLightAmbient");
             glUniform1f(loc, pointAmbient);
         }
 
@@ -369,15 +384,73 @@ void renderSystem(entt::registry& registry, const Camera& camera,
 }
 ```
 
-> **Note:** This simplified approach handles one light of each type. For multiple point lights, you'd pass an array of light data to the shader or do multi-pass rendering. We'll improve this in later chapters.
+> **Note:** This approach handles one directional light + one point light simultaneously. Each light type has its own uniform names so they don't overwrite each other. For multiple point lights, you'd pass an array of light data to the shader or do multi-pass rendering — we'll improve this in later chapters.
 
 ---
 
-## Creating Light Entities
+## Loading the Lit Shader
 
-In your scene setup function (the `setupScene()` we created in Chapter 5a):
+The lit shader files exist on disk, but the engine won't use them unless we load them. Add the lit shader to `main.cpp` alongside the existing shader loads:
+
+### Updated main.cpp (resource loading section)
 
 ```cpp
+    // ─── Load resources ──────────────────────────────────────
+    auto basicShader = resources.getShader("basic",
+        "assets/shaders/basic.vert",
+        "assets/shaders/basic.frag");
+
+    auto texturedShader = resources.getShader("textured",
+        "assets/shaders/textured.vert",
+        "assets/shaders/textured.frag");
+
+    auto litShader = resources.getShader("lit",               // NEW
+        "assets/shaders/lit.vert",
+        "assets/shaders/lit.frag");
+
+    auto wallTexture = resources.getTexture("wall", "assets/textures/wall.png");
+
+    auto cubeMesh = resources.getMesh("cube", "assets/models/cube.obj");
+```
+
+Nothing else in `main.cpp` changes — the render system already sends light uniforms to whatever shader is active. The key is that entities using lighting need to be assigned the `lit` shader instead of `basic` or `textured`.
+
+---
+
+## Updating scene_setup.cpp
+
+Now switch both entities to use the `lit` shader so they receive lighting. Both cubes use the wall texture — this lets us see the torch's effect clearly. The cube further from the torch is mostly sun-lit, while the wall cube near the torch picks up its warm orange tint.
+
+### Updated src/engine/ecs/scene_setup.cpp
+
+```cpp
+#include "engine/ecs/scene_setup.h"
+#include "engine/ecs/components.h"
+
+void setupScene(entt::registry& registry, ResourceManager& resources)
+{
+    auto litShader = resources.getShader("lit");
+    auto wallTexture = resources.getTexture("wall");
+    auto cubeMesh = resources.getMesh("cube");
+
+    // Create a cube (lit — far from torch, mostly sun-lit)
+    auto cube = registry.create();
+    registry.emplace<Position>(cube, glm::vec3(-3.0f, 0.0f, -3.0f));
+    registry.emplace<MeshRenderer>(cube,
+        cubeMesh->getVAO(), 0u,
+        litShader->getId(),
+        wallTexture->getId(),
+        true, cubeMesh->getIndexCount());
+
+    // Create a wall cube (lit — close to torch, gets warm orange tint)
+    auto wall = registry.create();
+    registry.emplace<Position>(wall, glm::vec3(2.0f, 0.0f, -3.0f));
+    registry.emplace<MeshRenderer>(wall,
+        cubeMesh->getVAO(), 0u,
+        litShader->getId(),
+        wallTexture->getId(),
+        true, cubeMesh->getIndexCount());
+
     // Sun light
     auto sun = registry.create();
     registry.emplace<DirectionalLight>(sun,
@@ -386,16 +459,19 @@ In your scene setup function (the `setupScene()` we created in Chapter 5a):
         0.1f                               // ambient strength
     );
 
-    // A torch in the level
+    // A torch in the level (close to the wall cube)
     auto torch = registry.create();
     registry.emplace<Position>(torch, glm::vec3(3.0f, 2.0f, -1.0f));
     registry.emplace<PointLight>(torch,
-        glm::vec3(1.0f, 0.7f, 0.3f),     // warm orange
-        0.05f, 0.09f, 0.032f             // ambient, linear, quadratic
+        glm::vec3(2.0f, 1.4f, 0.6f),     // bright warm orange
+        0.15f, 0.045f, 0.0075f           // ambient, linear, quadratic (~65 unit range)
     );
+}
 ```
 
 The lights are entities — just data in the ECS. You can create, move, destroy, or modify them at runtime like anything else. Want a flickering torch? Write a system that randomly varies the `PointLight::color` each frame.
+
+Both cubes use the `lit` shader now. The `textured` shader (which doesn't do lighting) is still available for UI elements or other things that shouldn't be affected by lights. Comparing the two cubes side-by-side shows the torch's effect — the wall cube closer to the torch has a visible warm orange tint, while the far cube is lit mainly by the sun.
 
 ---
 
