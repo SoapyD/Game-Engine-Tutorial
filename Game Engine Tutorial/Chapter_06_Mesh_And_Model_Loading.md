@@ -42,15 +42,15 @@ Indices:
 
 ## Vertex Data Structure
 
-Let's define a proper vertex structure instead of using raw float arrays:
+Let's define a proper vertex structure instead of using raw float arrays. Since components are our shared data definitions, this belongs in `components.h`:
 
 ```cpp
-// In a new file or in components.h
+// In components.h — add alongside the existing components
 
 struct Vertex {
-    glm::vec3 position;
-    glm::vec3 normal;      // For lighting (Chapter 7)
-    glm::vec2 texCoords;
+    glm::vec3 position  = glm::vec3(0.0f);
+    glm::vec3 normal    = glm::vec3(0.0f);   // For lighting (Chapter 7)
+    glm::vec2 texCoords = glm::vec2(0.0f);
 };
 ```
 
@@ -74,16 +74,11 @@ This contiguous layout is exactly what OpenGL's `glVertexAttribPointer` expects,
 ```cpp
 #pragma once
 
+#include "engine/ecs/components.h"   // Vertex struct lives here
+
 #include <glad/glad.h>
-#include <glm/glm.hpp>
 #include <vector>
 #include <string>
-
-struct Vertex {
-    glm::vec3 position;
-    glm::vec3 normal;
-    glm::vec2 texCoords;
-};
 
 class Mesh {
 public:
@@ -265,28 +260,13 @@ vertices.reserve(10000);  // Allocate space for 10000 vertices (no copies needed
 
 ## Loading OBJ Files
 
-The OBJ format is a simple text-based 3D model format. Here's a cube:
+The OBJ format is a simple text-based 3D model format. Here's what it looks like:
 
-```obj
-# Positions
-v -0.5 -0.5  0.5
-v  0.5 -0.5  0.5
-v  0.5  0.5  0.5
-v -0.5  0.5  0.5
-# ... more vertices
-
-# Texture coordinates
-vt 0.0 0.0
-vt 1.0 0.0
-vt 1.0 1.0
-vt 0.0 1.0
-
-# Normals
-vn 0.0 0.0 1.0
-
-# Faces (vertex/texcoord/normal indices, 1-based)
-f 1/1/1 2/2/1 3/3/1
-f 1/1/1 3/3/1 4/4/1
+```
+v  -0.5 -0.5  0.5      ← vertex position
+vt  0.0  0.0            ← texture coordinate
+vn  0.0  0.0  1.0       ← normal vector
+f  1/1/1  2/2/1  3/3/1  ← face (pos/tex/norm indices, 1-based)
 ```
 
 Each line starts with a type prefix:
@@ -294,6 +274,60 @@ Each line starts with a type prefix:
 - `vt` — texture coordinate
 - `vn` — normal vector
 - `f` — face (triangle), referencing indices into the v/vt/vn lists
+
+### A Test Model: assets/models/cube.obj
+
+Save the following as `assets/models/cube.obj`. This is a complete unit cube with normals and texture coordinates — we'll use it to test our OBJ loader at the end of the chapter:
+
+```obj
+# Unit cube for QEngine
+# 8 corners, 6 faces (each face has its own normal)
+
+# Positions
+v -0.5 -0.5  0.5
+v  0.5 -0.5  0.5
+v  0.5  0.5  0.5
+v -0.5  0.5  0.5
+v -0.5 -0.5 -0.5
+v  0.5 -0.5 -0.5
+v  0.5  0.5 -0.5
+v -0.5  0.5 -0.5
+
+# Texture coordinates
+vt 0.0 0.0
+vt 1.0 0.0
+vt 1.0 1.0
+vt 0.0 1.0
+
+# Normals (one per face direction)
+vn  0.0  0.0  1.0
+vn  0.0  0.0 -1.0
+vn  0.0  1.0  0.0
+vn  0.0 -1.0  0.0
+vn  1.0  0.0  0.0
+vn -1.0  0.0  0.0
+
+# Front face
+f 1/1/1 2/2/1 3/3/1
+f 1/1/1 3/3/1 4/4/1
+# Back face
+f 6/1/2 5/2/2 8/3/2
+f 6/1/2 8/3/2 7/4/2
+# Top face
+f 4/1/3 3/2/3 7/3/3
+f 4/1/3 7/3/3 8/4/3
+# Bottom face
+f 5/1/4 6/2/4 2/3/4
+f 5/1/4 2/3/4 1/4/4
+# Right face
+f 2/1/5 6/2/5 7/3/5
+f 2/1/5 7/3/5 3/4/5
+# Left face
+f 5/1/6 1/2/6 4/3/6
+f 5/1/6 4/3/6 8/4/6
+```
+
+Make sure the `assets/models/` directory exists. This cube gives us 24 unique vertices (shared positions but different normals per face) and 12 triangles — exactly what `createBox()` generates procedurally, so we can compare both paths.
 
 ### src/engine/renderer/obj_loader.h
 
@@ -453,9 +487,36 @@ An `istringstream` wraps a string and lets you read from it like a file using `>
 
 ---
 
-## Updating the Shader for Normals
+## Updating the Shaders for the New Vertex Layout
 
-Since our vertex data now includes normals, update the textured shader:
+Our `Vertex` struct now has `position`, `normal`, and `texCoords` at locations 0, 1, and 2. The shaders from Chapter 5 expect colour data at location 1 — we need to update both shaders to match the new layout.
+
+### assets/shaders/basic.vert (updated)
+
+The basic shader previously read a per-vertex **colour** at location 1. Now location 1 is the **normal**. A quick trick: use `abs(normal)` as the colour. Each cube face has a different normal direction, so each face gets a distinct colour — red for X-facing, green for Y-facing, blue for Z-facing. This makes it obvious that rendering is working correctly:
+
+```glsl
+#version 460 core
+
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aNormal;     // Was aColor — now the normal
+
+out vec3 vertexColor;
+
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+
+void main() {
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
+
+    // Use the absolute normal as colour — each face gets a distinct colour
+    // +/-X = red, +/-Y = green, +/-Z = blue
+    vertexColor = abs(aNormal);
+}
+```
+
+The fragment shader (`basic.frag`) stays unchanged — it already reads `vertexColor` and outputs it.
 
 ### assets/shaders/textured.vert (updated)
 
@@ -581,9 +642,11 @@ Add the following alongside the existing shader and texture methods:
 
 ### Updated engine/core/resource_manager.cpp
 
-Add the mesh methods:
+Add the include for the OBJ loader and the new mesh methods:
 
 ```cpp
+#include "engine/renderer/obj_loader.h"   // For loadOBJ()
+
 std::shared_ptr<Mesh> ResourceManager::getMesh(
 	const std::string& name,
 	const std::string& path)
@@ -635,60 +698,220 @@ This follows the exact same pattern we used for shaders and textures in Chapter 
 
 ---
 
-## Using It All Together
+## Retiring MeshFactory
 
-With the `ResourceManager` from Chapter 5a now extended for meshes, loading and using models is clean:
+In Chapter 5a we introduced `MeshFactory` and `MeshData` — a simple struct holding a raw VAO, VBO, and vertex count. That was fine for getting triangles and quads on screen quickly, but `Mesh` now does everything `MeshData` did and more:
+
+| | `MeshData` (Ch 5a) | `Mesh` (Ch 6) |
+|---|---|---|
+| Index buffers | No | Yes |
+| RAII cleanup | Manual `destroy()` call | Destructor handles it |
+| Move semantics | No | Yes |
+| Copy protection | No | Yes (deleted copy) |
+| Normals | No | Yes |
+
+**`MeshFactory` and `MeshData` are now retired.** Delete `mesh_factory.h` and `mesh_factory.cpp` from your project, and remove `src/engine/core/mesh_factory.cpp` from `CMakeLists.txt` — we won't use them again. Everything they did is now handled by the `Mesh` class and `ResourceManager` mesh caching.
+
+The procedural mesh functions (`createTriangleMesh`, `createQuadMesh`) are replaced by functions like `createBox()` above, which return a proper `Mesh` with index buffers and normals.
+
+---
+
+## Updating setupScene
+
+`setupScene()` from Chapter 5a used `MeshData`. Now it should use `Mesh` via `ResourceManager`:
+
+### Updated src/engine/ecs/scene_setup.h
 
 ```cpp
-    // Load a mesh from file via ResourceManager
-    auto crateMesh = resources.getMesh("crate", "assets/models/crate.obj");
+#pragma once
 
-    // Or generate one procedurally and cache it
-    auto boxMesh = std::make_shared<Mesh>(createBox(1.0f, 1.0f, 1.0f));
-    resources.storeMesh("box", boxMesh);
+#include <entt/entt.hpp>
+#include "engine/core/resource_manager.h"
 
-    // Get shaders and textures from ResourceManager (loaded in Chapter 5a)
-    auto texturedShader = resources.getShader("textured");
-    auto crateTexture = resources.getTexture("crate",
-        "assets/textures/crate.png");
-
-    // Create entities using cached resources
-    auto crate = registry.create();
-    registry.emplace<Position>(crate, glm::vec3(0.0f, 0.0f, -3.0f));
-    registry.emplace<MeshRenderer>(crate, boxMesh->getVAO(),
-                                    0u,  // vertexCount (unused with indices)
-                                    texturedShader->getId(),
-                                    crateTexture->getId(),
-                                    true,  // useIndices
-                                    boxMesh->getIndexCount());
+// Set up the initial scene entities using ResourceManager for all assets
+void setupScene(entt::registry& registry, ResourceManager& resources);
 ```
 
-Notice that everything goes through `resources` — shaders, textures, and now meshes. If another entity needs the same crate mesh, `resources.getMesh("crate")` returns the cached version instantly.
+### Updated src/engine/ecs/scene_setup.cpp
+
+```cpp
+#include "engine/ecs/scene_setup.h"
+#include "engine/ecs/components.h"
+
+void setupScene(entt::registry& registry, ResourceManager& resources)
+{
+    auto basicShader = resources.getShader("basic");
+    auto texturedShader = resources.getShader("textured");
+    auto wallTexture = resources.getTexture("wall");
+    auto cubeMesh = resources.getMesh("cube");
+
+    // Create a cube entity
+    auto cube = registry.create();
+    registry.emplace<Position>(cube, glm::vec3(0.0f, 0.0f, -3.0f));
+    registry.emplace<MeshRenderer>(cube, cubeMesh->getVAO(),
+                                    0u,
+                                    basicShader->getId(),
+                                    0u,
+                                    true,
+                                    cubeMesh->getIndexCount());
+
+    // Create a textured wall
+    auto wall = registry.create();
+    registry.emplace<Position>(wall, glm::vec3(2.0f, 0.0f, -3.0f));
+    registry.emplace<MeshRenderer>(wall, cubeMesh->getVAO(),
+                                    0u,
+                                    texturedShader->getId(),
+                                    wallTexture->getId(),
+                                    true,
+                                    cubeMesh->getIndexCount());
+}
+```
+
+Notice how much cleaner this is — `setupScene` just asks `ResourceManager` for assets by name. It doesn't need to know about file paths or mesh construction.
+
+---
+
+## Updated main.cpp
+
+Here is the complete `main.cpp` after this chapter's changes. Compare it with the Chapter 5a version — the `MeshFactory`/`MeshData` code is gone, replaced by the OBJ-loaded `Mesh` via `ResourceManager`. The `setupScene()` call is simpler too, since it now just takes `resources`:
+
+### src/main.cpp
+
+```cpp
+#include "engine/core/window.h"
+#include "engine/core/input_manager.h"
+#include "engine/core/resource_manager.h"
+#include "engine/ecs/components.h"
+#include "engine/ecs/scene_setup.h"
+#include "engine/ecs/systems/render_system.h"
+#include "engine/ecs/systems/movement_system.h"
+#include "engine/renderer/camera.h"
+
+#include <entt/entt.hpp>
+
+int main()
+{
+    // ─── Core systems ────────────────────────────────────────
+    Window window(1280, 720, "QEngine");
+
+    InputManager input;
+    input.init(window.getHandle());
+
+    ResourceManager resources;
+
+    // ─── Load resources ──────────────────────────────────────
+    auto basicShader = resources.getShader("basic",
+        "assets/shaders/basic.vert",
+        "assets/shaders/basic.frag");
+
+    auto texturedShader = resources.getShader("textured",
+        "assets/shaders/textured.vert",
+        "assets/shaders/textured.frag");
+
+    auto wallTexture = resources.getTexture("wall", "assets/textures/wall.png");
+
+    // Load the cube from the OBJ file we saved earlier
+    auto cubeMesh = resources.getMesh("cube", "assets/models/cube.obj");
+
+    // You can also create meshes procedurally and cache them:
+    // auto boxMesh = std::make_shared<Mesh>(createBox(1.0f, 1.0f, 1.0f));
+    // resources.storeMesh("box", boxMesh);
+
+    // ─── Camera ──────────────────────────────────────────────
+    Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+
+    // ─── ECS: Create the world ───────────────────────────────
+    entt::registry registry;
+    setupScene(registry, resources);
+
+    // ─── Game Loop ───────────────────────────────────────────
+    float deltaTime = 0.0f;
+    float lastFrame = 0.0f;
+
+    glEnable(GL_DEPTH_TEST);
+
+    while (!window.shouldClose())
+    {
+        float currentFrame = static_cast<float>(glfwGetTime());
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
+        input.update();
+        window.pollEvents();
+
+        // ─── Input ───────────────────────────────────────────
+        if (input.isKeyPressed(GLFW_KEY_ESCAPE))
+            glfwSetWindowShouldClose(window.getHandle(), true);
+
+        if (input.isKeyPressed(GLFW_KEY_W))
+            camera.processKeyboard(Camera::FORWARD, deltaTime);
+        if (input.isKeyPressed(GLFW_KEY_S))
+            camera.processKeyboard(Camera::BACKWARD, deltaTime);
+        if (input.isKeyPressed(GLFW_KEY_A))
+            camera.processKeyboard(Camera::LEFT, deltaTime);
+        if (input.isKeyPressed(GLFW_KEY_D))
+            camera.processKeyboard(Camera::RIGHT, deltaTime);
+
+        camera.processMouse(input.getMouseXOffset(), input.getMouseYOffset());
+
+        // ─── ECS Systems (tick order!) ───────────────────────
+        movementSystem(registry, deltaTime);
+        // ... future systems go here ...
+
+        // ─── Render ──────────────────────────────────────────
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        float aspectRatio = static_cast<float>(window.getWidth())
+                          / static_cast<float>(window.getHeight());
+        renderSystem(registry, camera, aspectRatio);
+
+        window.swapBuffers();
+    }
+
+    resources.clear();
+
+    return 0;
+}
+```
+
+### What changed from Chapter 5a
+
+| Before (Ch 5a) | After (Ch 6) |
+|---|---|
+| `#include "engine/core/mesh_factory.h"` | Removed — no longer needed |
+| `MeshData triangleMesh = MeshFactory::createTriangleMesh();` | `auto cubeMesh = resources.getMesh("cube", "assets/models/cube.obj");` |
+| `MeshData quadMesh = MeshFactory::createQuadMesh();` | Removed — cube replaces both |
+| `setupScene(registry, triangleMesh, quadMesh, basicShader, texturedShader, wallTexture);` | `setupScene(registry, resources);` |
+| `triangleMesh.destroy();` / `quadMesh.destroy();` | Removed — `Mesh` destructor handles cleanup |
+
+Everything now goes through `resources` — shaders, textures, and meshes. No more manual `destroy()` calls.
 
 ---
 
 ## Update CMakeLists.txt
 
-Add the new mesh and OBJ loader files alongside the files from Chapter 5a:
+Add the new files and remove `mesh_factory.cpp` (retired this chapter):
 
 ```cmake
 add_executable(QEngine
     src/main.cpp
     src/engine/core/input_manager.cpp
-    src/engine/core/mesh_factory.cpp
     src/engine/core/resource_manager.cpp
     src/engine/core/window.cpp
     src/engine/ecs/scene_setup.cpp
     src/engine/ecs/systems/movement_system.cpp
     src/engine/ecs/systems/render_system.cpp
     src/engine/renderer/camera.cpp
-    src/engine/renderer/mesh.cpp
-    src/engine/renderer/obj_loader.cpp
+    src/engine/renderer/mesh.cpp          # NEW — replaces mesh_factory
+    src/engine/renderer/obj_loader.cpp    # NEW
     src/engine/renderer/shader.cpp
     src/engine/renderer/stb_image_impl.cpp
     src/engine/renderer/texture.cpp
 )
 ```
+
+Note that `mesh_factory.cpp` is gone — the `Mesh` class and `createBox()` replace it entirely.
 
 ---
 
