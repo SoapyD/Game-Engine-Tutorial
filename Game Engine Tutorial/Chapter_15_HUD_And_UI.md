@@ -151,9 +151,10 @@ void drawHUDQuad(unsigned int hudVAO, const Shader& hudShader,
 }
 ```
 
-Add `setVec2` and `setVec4` to the Shader class:
+Add `setVec2` and `setVec4` to the Shader class. Declare them in `src/engine/renderer/shader.h` and implement them in `src/engine/renderer/shader.cpp`:
 
 ```cpp
+// In shader.cpp
 void Shader::setVec2(const std::string& name, const glm::vec2& value) const {
     glUniform2fv(glGetUniformLocation(m_programId, name.c_str()), 1,
                  glm::value_ptr(value));

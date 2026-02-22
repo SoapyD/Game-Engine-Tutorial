@@ -71,7 +71,7 @@ struct ItemBob {
 
 ## Creating Pickup Entities
 
-A factory function for spawning items:
+A factory function for spawning items. Add this to `src/engine/ecs/scene_setup.cpp` (or a dedicated `src/engine/ecs/item_factory.cpp` if you prefer to keep scene setup lean):
 
 ```cpp
 entt::entity createPickup(entt::registry& registry, PickupType type,
@@ -143,7 +143,7 @@ entt::entity createPickup(entt::registry& registry, PickupType type,
 }
 ```
 
-Place items in the level:
+Place items in the level (call these from `setupScene()`):
 
 ```cpp
 createPickup(registry, PickupType::HealthLarge,

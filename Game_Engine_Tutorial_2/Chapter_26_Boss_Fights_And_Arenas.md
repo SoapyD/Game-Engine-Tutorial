@@ -185,7 +185,7 @@ void bossSystem(entt::registry& registry, float dt) {
 
 ## Attack Patterns
 
-Each pattern is a function that spawns projectile entities. The maths is straightforward trigonometry.
+Each pattern is a function that spawns projectile entities. The maths is straightforward trigonometry. Add these attack pattern functions to `src/engine/ecs/systems/boss_system.cpp`:
 
 ### Single Shot
 
@@ -412,7 +412,7 @@ if (registry.all_of<ArenaTrigger>(triggerEntity)) {
 
 ## Spawn Waves
 
-Mid-fight reinforcements to maintain pressure:
+Mid-fight reinforcements to maintain pressure. Add this to `src/engine/ecs/systems/boss_system.cpp`:
 
 ```cpp
 struct SpawnWave {
@@ -446,7 +446,7 @@ void triggerSpawnWave(entt::registry& registry, int waveIndex) {
 
 ## Boss Death Sequence
 
-When the boss's health reaches zero:
+When the boss's health reaches zero. Add this to `src/engine/ecs/systems/boss_system.cpp`:
 
 ```cpp
 void triggerBossDeathSequence(entt::registry& registry,
@@ -481,7 +481,7 @@ void triggerBossDeathSequence(entt::registry& registry,
 
 ## Example Boss: The Guardian
 
-A complete boss definition — nothing but data:
+A complete boss definition — nothing but data. Add this factory function to `src/engine/ecs/scene_setup.cpp` (or a dedicated `src/engine/ecs/boss_factory.cpp`):
 
 ```cpp
 entt::entity spawnBoss(entt::registry& registry,

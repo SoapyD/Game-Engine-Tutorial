@@ -167,7 +167,7 @@ The skybox is a unit cube centred at the origin. We need 36 vertices (6 faces, 2
 
 ### Vertex Data
 
-Each vertex is just a 3D position. No normals, no UVs.
+Each vertex is just a 3D position. No normals, no UVs. Add this to `src/engine/renderer/skybox.cpp` (or wherever you define the Skybox class):
 
 ```cpp
 // 36 vertices — a unit cube from (-1,-1,-1) to (1,1,1)

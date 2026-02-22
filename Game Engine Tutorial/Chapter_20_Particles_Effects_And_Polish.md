@@ -197,6 +197,8 @@ void main() {
 
 ### Drawing All Particles
 
+Add this function to `src/engine/ecs/systems/render_system.cpp` (or a dedicated `src/engine/ecs/systems/particle_render.cpp` if you prefer to keep rendering concerns separate):
+
 ```cpp
 void renderParticles(const ParticlePool& pool, const Shader& particleShader,
                       unsigned int quadVAO, const Camera& camera,

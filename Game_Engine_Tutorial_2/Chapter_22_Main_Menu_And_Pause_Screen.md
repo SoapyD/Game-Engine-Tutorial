@@ -573,6 +573,8 @@ void SettingsState::render() {
 
 ## Game Over State
 
+Add this to `src/game/states/game_over_state.h`:
+
 ```cpp
 class GameOverState : public GameState {
 public:

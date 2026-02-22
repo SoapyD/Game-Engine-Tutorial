@@ -333,7 +333,7 @@ A door is an entity with:
 - `Mover` (defines start/end positions and behaviour)
 - `AABBCollider` (so the player can't walk through it when closed)
 
-Plus a trigger in front of the door:
+Plus a trigger in front of the door. Add this entity creation code to `src/engine/ecs/scene_setup.cpp` inside `setupScene()`:
 
 ```cpp
 // The door itself
@@ -372,7 +372,7 @@ When the player walks into the trigger zone, the door slides up. After 4 seconds
 
 ## Building a Lift
 
-A lift is a floor surface that carries the player up or down. Same Mover component, different axis:
+A lift is a floor surface that carries the player up or down. Same Mover component, different axis. Also in `setupScene()`:
 
 ```cpp
 auto lift = registry.create();

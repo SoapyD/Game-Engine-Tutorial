@@ -232,10 +232,10 @@ std::vector<std::string> Console::tokenise(const std::string& line) {
 
 ## GLFW Input Hookup
 
-The console needs character input — not just key presses. GLFW provides this through a character callback:
+The console needs character input — not just key presses. GLFW provides this through a character callback. Add the callbacks to `src/engine/core/window.cpp` and the setup code to `main.cpp`:
 
 ```cpp
-// In Window setup (or main.cpp):
+// In src/engine/core/window.cpp (or main.cpp):
 
 // Store console pointer for callbacks
 static Console* g_console = nullptr;

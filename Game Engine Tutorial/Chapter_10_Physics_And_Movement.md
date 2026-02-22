@@ -235,7 +235,7 @@ The `0.7f` normal check means a surface must be roughly horizontal (normal point
 
 ## Jumping
 
-Jumping is simple — when the player presses jump and is on the ground, set the Y velocity:
+Jumping is simple — when the player presses jump and is on the ground, set the Y velocity. Add this to `src/engine/ecs/systems/physics_system.cpp` and call it from the game loop:
 
 ```cpp
 void handleJump(entt::registry& registry) {
@@ -260,7 +260,7 @@ Quake's movement is legendary. It feels incredibly responsive and has emergent m
 
 ### Ground Acceleration
 
-On the ground, the player accelerates toward their desired direction up to `maxGroundSpeed`:
+On the ground, the player accelerates toward their desired direction up to `maxGroundSpeed`. Add this helper to `src/engine/ecs/systems/physics_system.cpp` (it's called by the movement system below):
 
 ```cpp
 void applyAcceleration(glm::vec3& velocity, const glm::vec3& wishDir,

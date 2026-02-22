@@ -64,7 +64,7 @@ struct PatrolRoute {
 
 ## Enemy Types as Data
 
-Different enemies are just different component values — no inheritance:
+Different enemies are just different component values — no inheritance. Add this factory function to `src/engine/ecs/scene_setup.cpp` (or a dedicated `src/engine/ecs/enemy_factory.cpp`):
 
 ```cpp
 entt::entity createEnemy(entt::registry& registry, const std::string& type,
@@ -137,6 +137,8 @@ Want a new enemy type? Add another `else if` block with different numbers. No ne
 An enemy can only see the player if:
 1. The player is within sight range
 2. There's no wall between them
+
+Add this helper to `src/engine/ecs/systems/ai_system.cpp` (it's used by the AI system below):
 
 ```cpp
 bool hasLineOfSight(const glm::vec3& from, const glm::vec3& to,

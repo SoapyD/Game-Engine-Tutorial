@@ -73,7 +73,9 @@ Instead of a full BSP compiler, we'll define levels as a list of **sectors** (ro
 
 ### The Level File Format (.qlvl)
 
-A simple text format:
+Create the file `assets/levels/test.qlvl`. This is the level asset that `LevelLoader` will parse at runtime — it defines the geometry, portals, and entities for our test level.
+
+The format is a simple line-based text file. Lines starting with `#` are comments. Each non-comment line starts with a keyword that tells the loader what to parse:
 
 ```
 # QEngine Level Format
@@ -397,7 +399,7 @@ glCullFace(GL_BACK);           // Cull back faces (default)
 glFrontFace(GL_CCW);           // Counter-clockwise = front (default)
 ```
 
-Add this once during initialisation (after GLAD loads). This roughly halves the fragment shader workload — the GPU never even starts shading invisible back faces.
+Add this to `Window::Window()` in `src/engine/core/window.cpp`, right after the GLAD initialisation succeeds (alongside the existing `glViewport` call). This is one-time OpenGL state setup — it roughly halves the fragment shader workload since the GPU never even starts shading invisible back faces.
 
 ---
 
@@ -413,8 +415,10 @@ Our simplified version at runtime:
 4. If visible, render the connected sector too
 5. Recurse (with a depth limit to prevent infinite loops)
 
+> **Conceptual pseudo-code** — this illustrates the algorithm but is not implemented in this chapter. Functions like `drawSectorMesh()` and `isPortalVisible()` are left undefined. You'll build a real version of this when the level system is more complete.
+
 ```cpp
-// Pseudo-code for portal-based rendering
+// Pseudo-code — not directly implementable as-is
 void renderLevel(const Level& level, const Camera& camera, int maxDepth) {
     int cameraSector = findSectorContaining(level, camera.getPosition());
     if (cameraSector < 0) return;
@@ -448,7 +452,10 @@ void renderSectorRecursive(const Level& level, int sectorId,
 
 ### Finding Which Sector the Camera Is In
 
+This helper is also conceptual for now — it will be implemented alongside the portal rendering above when the level system matures:
+
 ```cpp
+// Pseudo-code — will be implemented alongside renderLevel()
 int findSectorContaining(const Level& level, const glm::vec3& point) {
     for (size_t i = 0; i < level.sectors.size(); i++) {
         const auto& s = level.sectors[i];
@@ -468,10 +475,36 @@ This is a simple AABB (Axis-Aligned Bounding Box) containment test. For non-axis
 
 ## Creating a Test Level
 
-You can create a simple test level programmatically while the file format matures:
+You can create a simple test level programmatically while the file format matures. This involves three changes:
+
+### Step 1: Update the header
+
+In `src/engine/ecs/scene_setup.h`, add the `Level` include and change `setupScene` to return a `Level` so the game loop can use it later (for collision, rendering, etc.):
 
 ```cpp
-Level createTestLevel() {
+#pragma once
+
+#include <entt/entt.hpp>
+#include "engine/core/resource_manager.h"
+#include "engine/level/level.h"
+
+#include <memory>
+
+// Set up the initial scene entities and return the level geometry
+Level setupScene(entt::registry& registry, const ResourceManager& resources);
+```
+
+### Step 2: Add createTestLevel() and update setupScene()
+
+In `src/engine/ecs/scene_setup.cpp`, add the `level.h` include at the top, then add the `createTestLevel()` helper function **above** `setupScene()`. Finally, update `setupScene()` to call it and return the Level:
+
+```cpp
+#include "engine/ecs/scene_setup.h"
+#include "engine/ecs/components.h"
+#include "engine/level/level.h"
+
+// ─── Helper: build a test level programmatically ─────────────────
+static Level createTestLevel() {
     Level level;
 
     // Room 1: a simple box room
@@ -494,45 +527,173 @@ Level createTestLevel() {
         "ceil_dark.png", 0
     });
 
-    // Four walls
-    // Front wall (z = 5)
+    // Four walls — vertices wound CCW when viewed from INSIDE the room
+    // so that backface culling keeps the inward-facing side visible.
+
+    // Front wall (z = 5, normal points -z into the room)
     room1.surfaces.push_back({
-        {glm::vec3(-5,0,5), glm::vec3(5,0,5), glm::vec3(5,4,5), glm::vec3(-5,4,5)},
-        glm::vec3(0, 0, -1),  // normal: into the room
+        {glm::vec3(-5,4,5), glm::vec3(5,4,5), glm::vec3(5,0,5), glm::vec3(-5,0,5)},
+        glm::vec3(0, 0, -1),
         "wall_brick.png", 0
     });
 
-    // Back wall (z = -5)
+    // Back wall (z = -5, normal points +z into the room)
     room1.surfaces.push_back({
-        {glm::vec3(5,0,-5), glm::vec3(-5,0,-5), glm::vec3(-5,4,-5), glm::vec3(5,4,-5)},
+        {glm::vec3(5,4,-5), glm::vec3(-5,4,-5), glm::vec3(-5,0,-5), glm::vec3(5,0,-5)},
         glm::vec3(0, 0, 1),
         "wall_brick.png", 0
     });
 
-    // Left wall (x = -5)
+    // Left wall (x = -5, normal points +x into the room)
     room1.surfaces.push_back({
-        {glm::vec3(-5,0,-5), glm::vec3(-5,0,5), glm::vec3(-5,4,5), glm::vec3(-5,4,-5)},
+        {glm::vec3(-5,4,-5), glm::vec3(-5,4,5), glm::vec3(-5,0,5), glm::vec3(-5,0,-5)},
         glm::vec3(1, 0, 0),
         "wall_brick.png", 0
     });
 
-    // Right wall (x = 5)
+    // Right wall (x = 5, normal points -x into the room)
     room1.surfaces.push_back({
-        {glm::vec3(5,0,5), glm::vec3(5,0,-5), glm::vec3(5,4,-5), glm::vec3(5,4,5)},
+        {glm::vec3(5,4,5), glm::vec3(5,4,-5), glm::vec3(5,0,-5), glm::vec3(5,0,5)},
         glm::vec3(-1, 0, 0),
         "wall_brick.png", 0
     });
 
     level.sectors.push_back(std::move(room1));
 
-    // Build meshes for all sectors
-    // (call buildSectorMeshes or do it manually)
+    // Convert surface data into GPU meshes
+    buildSectorMeshes(level);
 
     return level;
 }
 ```
 
-This gives you a 10x4x10 box room to walk around in. Texture it with any image, add a light, and you have the beginnings of a Quake-like level.
+Note: `createTestLevel()` calls `buildSectorMeshes()` — the same free function that `LevelLoader::load()` calls. This converts the surface vertex data into GPU-ready `Mesh` objects (VAO, VBO, EBO) for each sector. Without this call, the sectors have surface data but no GPU meshes, and nothing will render.
+
+### Step 3: Make buildSectorMeshes a free function
+
+The `buildSectorMeshes` function is already implemented in `level_loader.cpp` (as part of the LevelLoader class). We need it accessible to `createTestLevel()` too, so move it out of the class and make it a free function.
+
+In `src/engine/level/level_loader.h`, move `buildSectorMeshes` out of the private section and declare it as a free function above the class:
+
+```cpp
+#pragma once
+
+#include "engine/level/level.h"
+#include <string>
+#include <unordered_map>
+
+// Free function — builds GPU meshes for all sectors in a level.
+// Used by both LevelLoader::load() and createTestLevel().
+void buildSectorMeshes(Level& level);
+
+class LevelLoader {
+    // ... (remove buildSectorMeshes from private section)
+};
+```
+
+In `src/engine/level/level_loader.cpp`, change `void LevelLoader::buildSectorMeshes(Level& level)` to just `void buildSectorMeshes(Level& level)` (remove the class prefix).
+
+**Important:** Make sure `src/engine/level/level_loader.cpp` is listed in your `CMakeLists.txt` source files. If it's missing, you'll get a linker error about undefined reference to `buildSectorMeshes`.
+
+### Step 4: Update setupScene() to create sector entities
+
+The render system draws ECS entities with `Position` + `MeshRenderer` components. The Level's sector meshes are `Mesh` objects stored inside each `Sector` — the render system doesn't know about them. We need to create an ECS entity for each sector.
+
+In `src/engine/ecs/scene_setup.cpp`, add the `level_loader.h` include and update `setupScene()`:
+
+```cpp
+#include "engine/ecs/scene_setup.h"
+#include "engine/ecs/components.h"
+#include "engine/level/level.h"
+#include "engine/level/level_loader.h"
+
+// ... createTestLevel() as above ...
+
+Level setupScene(entt::registry& registry, const ResourceManager& resources)
+{
+    auto litShader = resources.getShader("lit");
+    auto wallTexture = resources.getTexture("wall");
+    auto cubeMesh = resources.getMesh("cube");
+
+    // ─── Create the level geometry ───────────────────────────────
+    Level level = createTestLevel();
+
+    // Create an ECS entity for each sector so the render system draws it.
+    // Position is (0,0,0) because sector vertices are already in world space.
+    for (const auto& sector : level.sectors) {
+        if (!sector.mesh) continue;
+
+        auto sectorEntity = registry.create();
+        registry.emplace<Position>(sectorEntity, glm::vec3(0.0f));
+        registry.emplace<MeshRenderer>(sectorEntity,
+            sector.mesh->getVAO(), 0u,
+            litShader->getId(), wallTexture->getId(),
+            true, sector.mesh->getIndexCount()
+        );
+    }
+
+    // Keep the test cubes inside the room as visual references
+    auto cube = registry.create();
+    registry.emplace<Position>(cube, glm::vec3(-3.0f, 0.5f, -3.0f));
+    registry.emplace<MeshRenderer>(cube,
+        cubeMesh->getVAO(), 0u,
+        litShader->getId(), wallTexture->getId(),
+        true, cubeMesh->getIndexCount()
+    );
+
+    auto wall = registry.create();
+    registry.emplace<Position>(wall, glm::vec3(2.0f, 0.5f, -3.0f));
+    registry.emplace<MeshRenderer>(wall,
+        cubeMesh->getVAO(), 0u,
+        litShader->getId(), wallTexture->getId(),
+        true, cubeMesh->getIndexCount()
+    );
+
+    // ─── Lights (keep these from Chapter 7) ──────────────────────
+    auto sun = registry.create();
+    registry.emplace<DirectionalLight>(sun,
+        glm::vec3(-0.2f, -1.0f, -0.3f),
+        glm::vec3(1.0f, 0.95f, 0.8f), 0.1f
+    );
+
+    auto torch = registry.create();
+    registry.emplace<Position>(torch, glm::vec3(3.0f, 2.0f, -1.0f));
+    registry.emplace<PointLight>(torch,
+        glm::vec3(2.0f, 1.4f, 0.6f),
+        0.15f, 0.045f, 0.0075f
+    );
+
+    return level;
+}
+```
+
+The key detail: `MeshRenderer` stores the sector mesh's VAO handle (an integer). The actual `Mesh` object lives inside the `Level`. As long as the `Level` stays alive, the VAOs are valid. If the `Level` is destroyed, the `Mesh` destructors free the GPU resources and the VAOs become invalid — so we must keep the `Level` alive.
+
+### Step 5: Update main.cpp
+
+In `main.cpp`, capture the returned Level so it stays alive for the entire game loop:
+
+```cpp
+// Before (Chapter 7):
+setupScene(registry, resources);
+
+// After (Chapter 8):
+Level level = setupScene(registry, resources);
+// 'level' must stay alive — it owns the sector Mesh objects.
+// The MeshRenderer entities reference these meshes via their VAO handles.
+```
+
+Also raise the camera so you're at eye height instead of floor level. The room goes from y=0 (floor) to y=4 (ceiling), so set the camera to approximately standing eye height:
+
+```cpp
+// Before:
+Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+
+// After — y=1.7 is roughly standing eye height:
+Camera camera(glm::vec3(0.0f, 1.7f, 3.0f));
+```
+
+You should now see a 10x4x10 box room with your two test cubes inside it. The `level` variable in `main.cpp` will be passed to the collision system (Chapter 9) and the physics system (Chapter 10) later.
 
 ---
 

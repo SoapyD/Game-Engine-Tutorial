@@ -218,6 +218,8 @@ std::memcpy(destination, &value, sizeof(T));
 
 ### C++ Concept: `reinterpret_cast` (and why we avoid it)
 
+> **Note:** This is a conceptual explanation only — do not add this code to your project. It explains an anti-pattern so you understand why we use `memcpy` instead.
+
 You might see code like:
 ```cpp
 InputPacket* packet = reinterpret_cast<InputPacket*>(data);

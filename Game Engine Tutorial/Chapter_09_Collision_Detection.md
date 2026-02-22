@@ -115,16 +115,7 @@ Used for:
 
 ### Ray Data Structure
 
-```cpp
-struct Ray {
-    glm::vec3 origin;
-    glm::vec3 direction;    // Should be normalised
-
-    glm::vec3 pointAt(float t) const {
-        return origin + direction * t;
-    }
-};
-```
+`Ray` isn't an ECS component — you'd never attach it to an entity. It's a utility struct used as a parameter to raycasting functions, so it belongs with the physics types in `src/engine/physics/raycast.h` (shown in the next section).
 
 `t` is a scalar — it says how far along the ray the point is. `t = 0` is the origin, `t = 1` is one unit along the direction.
 
@@ -134,8 +125,19 @@ struct Ray {
 // src/engine/physics/raycast.h
 #pragma once
 
+#include <glm/glm.hpp>
+#include <entt/entt.hpp>
 #include "engine/physics/aabb.h"
 #include <optional>
+
+struct Ray {
+    glm::vec3 origin;
+    glm::vec3 direction;    // Should be normalised
+
+    glm::vec3 pointAt(float t) const {
+        return origin + direction * t;
+    }
+};
 
 struct RayHit {
     float distance;         // How far along the ray
@@ -230,7 +232,17 @@ std::optional<float> findRoot(float a, float b, float c);
 
 ## Ray-Triangle Intersection
 
-For more precise collision with level geometry (walls, floors), we need ray-triangle tests:
+For more precise collision with level geometry (walls, floors), we need ray-triangle tests.
+
+Add the declaration to `src/engine/physics/raycast.h`:
+
+```cpp
+std::optional<float> rayIntersectsTriangle(
+    const Ray& ray,
+    const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2);
+```
+
+Add the implementation to `src/engine/physics/raycast.cpp`:
 
 ```cpp
 // Möller–Trumbore intersection algorithm
@@ -536,6 +548,22 @@ void collisionSystem(entt::registry& registry, SpatialHash& spatialHash,
                       const Level& level, float dt);
 ```
 
+### Updating Components
+
+Add the collider component to `src/engine/ecs/components.h` if not already there:
+
+```cpp
+struct AABBCollider {
+    glm::vec3 halfExtents = glm::vec3(0.5f);
+    bool isTrigger = false;    // Triggers detect overlap but don't block
+};
+```
+
+Typical sizes:
+- Player: `halfExtents = (0.4, 0.9, 0.4)` — roughly human-sized
+- Crate: `halfExtents = (0.5, 0.5, 0.5)` — 1m cube
+- Bullet: no collider (use raycast instead for hitscan)
+
 ### src/engine/ecs/systems/collision_system.cpp
 
 ```cpp
@@ -649,24 +677,6 @@ This is the standard FPS wall-sliding behaviour. Quake does exactly this.
 
 ---
 
-## Updating Components
-
-Add the collider component to `components.h` if not already there:
-
-```cpp
-struct AABBCollider {
-    glm::vec3 halfExtents = glm::vec3(0.5f);
-    bool isTrigger = false;    // Triggers detect overlap but don't block
-};
-```
-
-Typical sizes:
-- Player: `halfExtents = (0.4, 0.9, 0.4)` — roughly human-sized
-- Crate: `halfExtents = (0.5, 0.5, 0.5)` — 1m cube
-- Bullet: no collider (use raycast instead for hitscan)
-
----
-
 ## The Updated Tick Order
 
 ```
@@ -681,6 +691,54 @@ Typical sizes:
 ```
 
 Collision runs **before** movement so that the velocity is corrected before being applied. The entity never actually enters the wall.
+
+### Wiring It Up in main.cpp
+
+Add the new includes at the top of `src/main.cpp`:
+
+```cpp
+#include "engine/ecs/systems/collision_system.h"
+#include "engine/physics/spatial_hash.h"
+```
+
+Create a `SpatialHash` before the game loop (after the `Level level = ...` line):
+
+```cpp
+SpatialHash spatialHash(4.0f);  // 4-unit cells — roughly room-sized divisions
+```
+
+Then update the ECS tick section inside the game loop. The collision system must run **before** the movement system:
+
+```cpp
+// ─── ECS Systems (tick order!) ───────────────────────────
+collisionSystem(registry, spatialHash, level, deltaTime);  // adjust velocities
+movementSystem(registry, deltaTime);                        // apply velocities to positions
+```
+
+---
+
+## Testing It
+
+The collision system only affects entities with `Position`, `Velocity`, and `AABBCollider`. Right now nothing has those last two components, so there's nothing to test. Let's give one of the test cubes a velocity and a collider so it slides across the room and stops at the wall.
+
+In `src/engine/ecs/scene_setup.cpp`, add `Velocity` and `AABBCollider` to the first test cube:
+
+```cpp
+// Keep the test cubes inside the room as visual references
+auto cube = registry.create();
+registry.emplace<Position>(cube, glm::vec3(-3.0f, 0.5f, -3.0f));
+registry.emplace<Velocity>(cube, glm::vec3(2.0f, 0.0f, 0.0f));  // slides along +X
+registry.emplace<AABBCollider>(cube, glm::vec3(0.5f), false);    // 1m cube collider
+registry.emplace<MeshRenderer>(cube,
+    cubeMesh->getVAO(), 0u,
+    litShader->getId(), wallTexture->getId(),
+    true, cubeMesh->getIndexCount()
+);
+```
+
+Run the engine. You should see the cube slide to the right and stop when it hits the wall at x=5. Without the collision system it would pass straight through.
+
+Once you've verified it works, you can remove the `Velocity` component from the cube (or set it to zero) to keep things tidy for Chapter 10.
 
 ---
 
