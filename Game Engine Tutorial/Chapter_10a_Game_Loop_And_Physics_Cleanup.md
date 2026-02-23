@@ -1,101 +1,116 @@
 # Chapter 10a: Game Loop & Physics Cleanup
 
-> **Prerequisites:** Chapter 10 (Physics & Movement) completed. You should have a working game loop with gravity, jumping, friction, and basic collision response.
+> **Prerequisites:** Chapter 10 (Physics & Movement) completed. You should have a working game loop with a fixed timestep, gravity, friction, collision detection, and ground detection.
 
 ---
 
 ## Why This Chapter?
 
-If you have been following along, your `main.cpp` is starting to groan under its own weight. The fixed timestep logic is a chunk of boilerplate sitting right in your game loop. Gravity is `9.81f` in one system and `9.8f` in another (or is it `-9.81f`?). Collision layer masks are `0x01` and `0x02` at file scope with no indication of what they mean. And the order your systems run in? That is just "whatever order you happened to type the function calls."
+If you have been following along, your `main.cpp` is starting to groan under its own weight. The fixed timestep logic is a chunk of boilerplate sitting right in your game loop. Terminal velocity is `-50.0f` buried inside `physicsSystem`. The collision layers we previewed in Chapter 10 have not been implemented yet. And the order your systems run in? That is just "whatever order you happened to type the function calls."
 
-None of this is *broken*. It all works. But it is the kind of code that quietly rots. You change the gravity constant in one place and forget the other. You reorder a system call and spend an hour debugging why jumping feels wrong. You come back in two weeks and cannot remember what `0x04` means.
+None of this is *broken*. It all works. But it is the kind of code that quietly rots. You change a physics constant in one place and forget the other. You reorder a system call and spend an hour debugging why physics feels wrong. You come back in two weeks and cannot remember why `groundDetectionSystem` must run after `movementSystem`.
 
-This chapter is a **cleanup pass** -- no new features, just organising what we have. We will extract four small, focused pieces:
+This chapter is a **cleanup pass** -- no new features, just organising what we have. We will:
 
-1. **FixedTimestep** -- wraps the accumulator pattern in a reusable class
-2. **PhysicsConfig** -- centralises all those magic numbers
-3. **CollisionLayers** -- gives names to bitmask constants
-4. **System phase ordering** -- documents and formalises the execution order
+1. **FixedTimestep** -- wrap the accumulator pattern in a reusable class
+2. **PhysicsConfig** -- centralise magic numbers into a registry context variable
+3. **CollisionLayers** -- implement the bitmask constants previewed in Chapter 10
+4. **System phase ordering** -- document and formalise the execution order
+5. **Multiple point lights** -- upgrade the renderer from one point light to many
+6. **Remove test entities** -- the test cubes have served their purpose
 
-By the end, your game loop will be shorter, your physics parameters will live in one place, and the next person to read your code (including future you) will thank you.
+By the end, your game loop will be shorter, your physics parameters will live in one place, your lighting will actually work with multiple sources, and the next person to read your code (including future you) will thank you.
 
 ---
 
 ## The Problem: Before
 
-Let us look at what a typical `main.cpp` game loop looks like after Chapter 10. Yours may differ in details, but the shape is usually something like this:
+Here is what your `main.cpp` game loop looks like after Chapter 10:
 
 ```cpp
 // main.cpp - after Chapter 10
-// ... includes, window/input/resource setup from Chapter 5a ...
 
-// Magic numbers at file scope
-constexpr uint32_t LAYER_PLAYER     = 0x01;
-constexpr uint32_t LAYER_WORLD      = 0x02;
-constexpr uint32_t LAYER_ENEMY      = 0x04;
-constexpr uint32_t LAYER_PROJECTILE = 0x08;
+#include "engine/core/window.h"
+#include "engine/core/input_manager.h"
+#include "engine/core/resource_manager.h"
+#include "engine/ecs/components.h"
+#include "engine/ecs/scene_setup.h"
+#include "engine/ecs/systems/render_system.h"
+#include "engine/ecs/systems/collision_system.h"
+#include "engine/ecs/systems/movement_system.h"
+#include "engine/ecs/systems/physics_system.h"
+#include "engine/physics/spatial_hash.h"
+#include "engine/renderer/camera.h"
+
+#include <entt/entt.hpp>
 
 int main()
 {
-	Window window(1280, 720, "QEngine");
-	InputManager input;
-	input.init(window.getHandle());
-	ResourceManager resources;
+    Window window(1280, 720, "QEngine");
 
-	// ... resource loading, mesh creation ...
+    InputManager input;
+    input.init(window.getHandle());
 
-	entt::registry registry;
-	setupScene(registry, /* ... */);
+    ResourceManager resources;
 
-	// Fixed timestep variables scattered in main
-	const float fixedDeltaTime = 1.0f / 60.0f;
-	float accumulator = 0.0f;
-	auto previousTime = std::chrono::high_resolution_clock::now();
+    // ... resource loading ...
 
-	while (!window.shouldClose())
-	{
-		auto currentTime = std::chrono::high_resolution_clock::now();
-		float deltaTime = std::chrono::duration<float>(currentTime - previousTime).count();
-		previousTime = currentTime;
+    Camera camera(glm::vec3(0.0f, 1.7f, 3.0f));
 
-		// Clamp to avoid spiral of death
-		if (deltaTime > 0.25f)
-			deltaTime = 0.25f;
+    entt::registry registry;
+    Level level = setupScene(registry, resources);
+    SpatialHash spatialHash(4.0f);
 
-		accumulator += deltaTime;
+    // Fixed timestep variables scattered in main
+    constexpr float FIXED_TIMESTEP = 1.0f / 60.0f;
+    float accumulator = 0.0f;
+    float lastFrame = 0.0f;
 
-		input.update();
-		window.pollEvents();
-		inputSystem(registry);
+    glEnable(GL_DEPTH_TEST);
 
-		while (accumulator >= fixedDeltaTime)
-		{
-			// Physics with magic numbers baked into systems
-			gravitySystem(registry, fixedDeltaTime);       // has 9.81f inside
-			movementSystem(registry, fixedDeltaTime);       // has friction 0.85f, air control 0.3f inside
-			collisionSystem(registry, fixedDeltaTime);      // has layer checks using raw hex
-			jumpSystem(registry);                           // has jumpVelocity 5.0f inside
+    while (!window.shouldClose())
+    {
+        float currentFrame = (float)glfwGetTime();
+        float frameTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
 
-			accumulator -= fixedDeltaTime;
-		}
+        if (frameTime > 0.25f) frameTime = 0.25f;
 
-		float alpha = accumulator / fixedDeltaTime;
+        accumulator += frameTime;
 
-		renderSystem(registry, alpha);
+        input.update();
+        window.pollEvents();
 
-		window.swapBuffers();
-	}
+        // ... camera input ...
 
-	// ... cleanup ...
+        while (accumulator >= FIXED_TIMESTEP)
+        {
+            physicsSystem(registry, FIXED_TIMESTEP);
+            collisionSystem(registry, spatialHash, level, FIXED_TIMESTEP);
+            movementSystem(registry, FIXED_TIMESTEP);
+            groundDetectionSystem(registry, level);
+
+            accumulator -= FIXED_TIMESTEP;
+        }
+
+        // ... render ...
+
+        window.swapBuffers();
+    }
+
+    resources.clear();
+    return 0;
 }
 ```
 
 Count the problems:
 
 - **The accumulator pattern** is ~15 lines of boilerplate that will be identical in every project. It has nothing to do with *your* game.
-- **Physics constants** are buried inside system functions. To tweak jump height, you have to find which file `5.0f` lives in. Good luck if two systems both reference gravity with slightly different values.
-- **Collision layers** are raw hex literals. `0x04` means "enemy" but only if you remember that.
-- **System ordering** is implicit. There is no documentation for *why* input comes before physics, or why render is last. Reordering is one careless cut-and-paste away.
+- **Magic numbers** are scattered: terminal velocity (`-50.0f`) is buried inside `physicsSystem`, the timestep is a `constexpr` in main, the spiral-of-death cap is `0.25f`.
+- **No collision layers** yet. Chapter 10 introduced the concept but we have not applied it. Every entity collides with everything.
+- **System ordering** is implicit. There is no documentation for *why* `physicsSystem` comes before `collisionSystem`, or why `groundDetectionSystem` must be last in the physics tick.
+- **Only one point light works.** The render system `break`s after the first point light it finds. The `PointLight` component has `linear` and `quadratic` attenuation fields, but the shader ignores them and hardcodes `0.09` and `0.032`. Place six point lights in a scene and only one will render.
+- **Test entities** (`cube` and `cube2`) are still in `scene_setup.cpp`. They were useful for testing but are no longer needed.
 
 Let us fix each of these.
 
@@ -117,39 +132,36 @@ This pattern never changes between projects. It is a perfect candidate for extra
 
 ### The Code
 
+Create `src/engine/core/fixed_timestep.h`:
+
 ```cpp
 // engine/core/fixed_timestep.h
 #pragma once
 
-#include <chrono>
-
 class FixedTimestep
 {
 public:
-	explicit FixedTimestep(float timestep = 1.0f / 60.0f, float maxDeltaTime = 0.25f)
+	explicit FixedTimestep(float timestep = 1.0f / 60.0f, float maxFrameTime = 0.25f)
 		: m_timestep(timestep)
-		, m_maxDeltaTime(maxDeltaTime)
+		, m_maxFrameTime(maxFrameTime)
 		, m_accumulator(0.0f)
-		, m_previousTime(std::chrono::high_resolution_clock::now())
+		, m_frameTime(0.0f)
+		, m_lastTime(0.0f)
 	{
 	}
 
 	// Call once per frame, at the top of the game loop.
-	// Measures elapsed time since last call and adds it to the accumulator.
-	void accumulate()
+	// Pass in the current time (e.g. from glfwGetTime()).
+	void accumulate(float currentTime)
 	{
-		auto currentTime = std::chrono::high_resolution_clock::now();
-		float deltaTime = std::chrono::duration<float>(currentTime - m_previousTime).count();
-		m_previousTime = currentTime;
+		m_frameTime = currentTime - m_lastTime;
+		m_lastTime = currentTime;
 
 		// Clamp to prevent spiral of death.
-		// If a frame takes longer than maxDeltaTime (e.g. breakpoint, window drag),
-		// we just pretend less time passed. Physics will slow down, but it won't
-		// try to simulate 10 seconds of physics in one frame.
-		if (deltaTime > m_maxDeltaTime)
-			deltaTime = m_maxDeltaTime;
+		if (m_frameTime > m_maxFrameTime)
+			m_frameTime = m_maxFrameTime;
 
-		m_accumulator += deltaTime;
+		m_accumulator += m_frameTime;
 	}
 
 	// Call in a while loop. Returns true if there is enough accumulated time
@@ -172,40 +184,33 @@ public:
 		return m_accumulator / m_timestep;
 	}
 
+	// The frame time from the most recent accumulate() call.
+	// Use this for frame-rate-dependent things like camera input.
+	float getFrameTime() const { return m_frameTime; }
+
 	// Getters for the configuration values.
 	float getTimestep() const { return m_timestep; }
-	float getMaxDeltaTime() const { return m_maxDeltaTime; }
 
 private:
 	float m_timestep;
-	float m_maxDeltaTime;
+	float m_maxFrameTime;
 	float m_accumulator;
-	std::chrono::high_resolution_clock::time_point m_previousTime;
+	float m_frameTime;
+	float m_lastTime;
 };
 ```
 
 ### Why This Design?
 
-**Why a class and not free functions?** The accumulator and previous-time are state that must persist across frames. A class is the natural home for persistent state with a small interface.
+**Why a class and not free functions?** The accumulator and timing state must persist across frames. A class is the natural home for persistent state with a small interface.
 
 **Why `explicit` on the constructor?** This prevents accidental implicit conversion from a `float` to a `FixedTimestep`. It is a good habit for any single-argument constructor.
 
-**Why does `accumulate()` handle timing internally?** You *could* pass `deltaTime` in from outside, and there are valid reasons to do so (testability, custom time sources). But for 99% of cases, the class measuring its own wall-clock time is simpler and eliminates a category of bugs (forgetting to update the clock, passing the wrong delta). If you need a manual override later, you can add an overload:
-
-```cpp
-// Optional: manual accumulation for testing or replays
-void accumulate(float deltaTime)
-{
-	if (deltaTime > m_maxDeltaTime)
-		deltaTime = m_maxDeltaTime;
-
-	m_accumulator += deltaTime;
-}
-```
+**Why pass `currentTime` to `accumulate()`?** We are already using `glfwGetTime()` for timing. Rather than switching to `std::chrono` and introducing a different time source, we keep things consistent by passing in the GLFW time. This also makes the class testable -- you can feed it artificial time values.
 
 **Why is `step()` a boolean and not a callback?** Keeping the loop in the caller's code means you can see exactly what runs at fixed rate. A callback-based API hides the loop body behind a `std::function` and makes debugging harder. Simplicity wins.
 
-**What is the "spiral of death"?** If your physics step takes longer than the fixed timestep to compute, each frame adds more time to the accumulator than it drains. The accumulator grows without bound, and the game freezes as it tries to simulate an ever-increasing number of steps. The `maxDeltaTime` clamp prevents this -- physics will slow down instead of locking up. 0.25 seconds (4 FPS equivalent) is a common clamp value.
+**What is the "spiral of death"?** If your physics step takes longer than the fixed timestep to compute, each frame adds more time to the accumulator than it drains. The accumulator grows without bound, and the game freezes as it tries to simulate an ever-increasing number of steps. The `maxFrameTime` clamp prevents this -- physics will slow down instead of locking up. 0.25 seconds (4 FPS equivalent) is a common clamp value.
 
 ---
 
@@ -224,7 +229,7 @@ const auto& config = registry.ctx().get<PhysicsConfig>();
 
 // Accessing it for modification
 auto& config = registry.ctx().get<PhysicsConfig>();
-config.gravity = 4.9f; // low gravity level!
+config.terminalVelocity = 30.0f; // slower fall speed
 ```
 
 Context variables are:
@@ -233,9 +238,11 @@ Context variables are:
 - **Accessed by type** -- no string keys, no IDs, just `get<T>()`
 - **Lifetime-managed by the registry** -- they are destroyed when the registry is destroyed
 
-This is exactly what we want for physics parameters. They are global to the simulation, needed by multiple systems, and there should be exactly one set of them.
-
 ### The Code
+
+Our per-entity physics values already live in components (`Gravity`, `CharacterPhysics`). PhysicsConfig is for truly **global** values that don't vary per entity.
+
+Create `src/engine/physics/physics_config.h`:
 
 ```cpp
 // engine/physics/physics_config.h
@@ -243,126 +250,100 @@ This is exactly what we want for physics parameters. They are global to the simu
 
 struct PhysicsConfig
 {
-	// Gravitational acceleration (positive = downward, applied as negative Y).
-	// Earth-like default. Set lower for floaty platformers, higher for heavy feels.
-	float gravity = 9.81f;
+	// Maximum fall speed (units per second, positive value).
+	// Currently a magic number (-50.0f) inside physicsSystem.
+	float terminalVelocity = 50.0f;
 
-	// Ground friction multiplier, applied per fixed step to horizontal velocity.
-	// 1.0 = no friction (ice), 0.0 = instant stop. Typical range: 0.8 - 0.95.
-	float friction = 0.85f;
-
-	// Air control multiplier. Scales how much horizontal input affects velocity
-	// while airborne. 0.0 = no air control, 1.0 = full ground-like control.
-	float airControl = 0.3f;
-
-	// Maximum horizontal speed (units per second). Velocity is clamped to this
-	// after all forces are applied. Prevents infinite acceleration.
-	float maxSpeed = 8.0f;
-
-	// Instantaneous vertical velocity applied when jumping (units per second).
-	// This is set directly, not added -- you either jump or you don't.
-	float jumpVelocity = 5.0f;
-
-	// Fixed physics timestep. Stored here for convenience so systems that
-	// need it don't have to receive it as a separate parameter.
+	// Fixed physics timestep (seconds per tick).
+	// Stored here so systems can read it from context instead of
+	// receiving it as a parameter.
 	float fixedDeltaTime = 1.0f / 60.0f;
 };
 ```
 
 ### Why This Design?
 
-**Why a struct and not a class?** All members are public data with sensible defaults. There is no invariant to protect, no complex construction logic. A plain struct with aggregate initialisation is the right tool. Do not add complexity where none is needed.
+**Why so few fields?** Per-entity physics values (gravity strength, friction, acceleration, jump force) already live where they belong -- in the `Gravity` and `CharacterPhysics` components. PhysicsConfig only holds values that are truly global to the simulation and don't vary per entity.
 
-**Why default member initialisers?** They serve double duty: they document the expected range of each value, and they let you construct a `PhysicsConfig` with zero arguments and get a playable game. You can override individual values:
+**Why a struct and not a class?** All members are public data with sensible defaults. There is no invariant to protect, no complex construction logic. A plain struct with aggregate initialisation is the right tool.
 
-```cpp
-auto& config = registry.ctx().emplace<PhysicsConfig>();
-config.gravity = 4.9f;    // low-gravity level
-config.jumpVelocity = 7.0f; // higher jumps to compensate
-```
+**Why default member initialisers?** They serve double duty: they document the expected value, and they let you construct a `PhysicsConfig` with zero arguments and get working defaults.
 
-**Why store `fixedDeltaTime` in PhysicsConfig?** Physics systems need the timestep to integrate velocities. Rather than passing it as a separate parameter to every system function, we put it where the rest of the physics parameters live. One fewer function argument, one fewer thing to get wrong.
-
-**Why not `constexpr`?** These values will likely be loaded from a config file or tweaked at runtime (think debug sliders). Making them `constexpr` would prevent that. The defaults are compile-time constants in spirit, but the struct itself should be mutable.
+**Why not `constexpr`?** These values will likely be loaded from a config file or tweaked at runtime (think debug sliders). Making them `constexpr` would prevent that.
 
 ### Updating Your Systems
 
-Here is how a system changes. Before:
+Here is how `physicsSystem` changes. Before:
 
 ```cpp
-void gravitySystem(entt::registry& registry, float dt)
+void physicsSystem(entt::registry& registry, float dt)
 {
-	auto view = registry.view<Velocity, Gravity>();
-	for (auto [entity, velocity, gravity] : view.each())
-	{
-		velocity.y -= 9.81f * dt;  // magic number!
-	}
+    auto gravityView = registry.view<Velocity, Gravity, OnGround>();
+    for (auto [entity, vel, grav, ground] : gravityView.each())
+    {
+        if (!ground.value)
+        {
+            vel.value.y -= grav.strength * dt;
+
+            // Terminal velocity (cap fall speed)
+            if (vel.value.y < -50.0f)     // magic number!
+            {
+                vel.value.y = -50.0f;
+            }
+        }
+    }
+    // ... friction code ...
 }
 ```
 
 After:
 
 ```cpp
-void gravitySystem(entt::registry& registry)
+void physicsSystem(entt::registry& registry)
 {
-	const auto& config = registry.ctx().get<PhysicsConfig>();
+    const auto& config = registry.ctx().get<PhysicsConfig>();
 
-	auto view = registry.view<Velocity, Gravity>();
-	for (auto [entity, velocity, gravity] : view.each())
-	{
-		velocity.y -= config.gravity * config.fixedDeltaTime;
-	}
+    auto gravityView = registry.view<Velocity, Gravity, OnGround>();
+    for (auto [entity, vel, grav, ground] : gravityView.each())
+    {
+        if (!ground.value)
+        {
+            vel.value.y -= grav.strength * config.fixedDeltaTime;
+
+            if (vel.value.y < -config.terminalVelocity)
+            {
+                vel.value.y = -config.terminalVelocity;
+            }
+        }
+    }
+    // ... friction code (also replace dt with config.fixedDeltaTime) ...
 }
 ```
 
-Notice the system no longer takes `dt` as a parameter. It reads everything it needs from the registry context. This is a meaningful improvement: the system's signature now honestly reflects its dependencies (just the registry), and the physics configuration is always consistent across all systems because they all read the same struct.
+Notice the system no longer takes `dt` as a parameter. It reads the timestep and terminal velocity from the registry context. Apply the same treatment to `movementSystem` and `collisionSystem` -- replace their `float dt` parameter with `registry.ctx().get<PhysicsConfig>().fixedDeltaTime`.
 
-Apply the same treatment to your movement, jump, and collision systems:
+Update `physics_system.h` to reflect the new signatures:
 
 ```cpp
-void movementSystem(entt::registry& registry)
-{
-	const auto& config = registry.ctx().get<PhysicsConfig>();
+#pragma once
 
-	auto view = registry.view<Position, Velocity, OnGround>();
-	for (auto [entity, position, velocity, onGround] : view.each())
-	{
-		float frictionFactor = onGround.grounded ? config.friction : 1.0f;
-		float controlFactor = onGround.grounded ? 1.0f : config.airControl;
+#include <entt/entt.hpp>
 
-		velocity.x *= frictionFactor;
+struct Level;
 
-		// Clamp horizontal speed
-		if (std::abs(velocity.x) > config.maxSpeed)
-			velocity.x = config.maxSpeed * (velocity.x > 0.0f ? 1.0f : -1.0f);
-
-		position.x += velocity.x * config.fixedDeltaTime;
-		position.y += velocity.y * config.fixedDeltaTime;
-	}
-}
-
-void jumpSystem(entt::registry& registry)
-{
-	const auto& config = registry.ctx().get<PhysicsConfig>();
-
-	auto view = registry.view<Velocity, OnGround, JumpInput>();
-	for (auto [entity, velocity, onGround, jump] : view.each())
-	{
-		if (jump.requested && onGround.grounded)
-		{
-			velocity.y = config.jumpVelocity;
-			onGround.grounded = false;
-		}
-		jump.requested = false;
-	}
-}
+void physicsSystem(entt::registry& registry);
+void groundDetectionSystem(entt::registry& registry, const Level& level);
 ```
+
+Note that `groundDetectionSystem` keeps its `Level` parameter -- it needs the level geometry, which is not a registry context variable.
 
 ---
 
 ## 3. The CollisionLayers Namespace
 
 ### The Concept: `constexpr` Bitmask Constants
+
+In Chapter 10, we previewed collision layers as an illustrative concept. Now we implement them properly.
 
 Collision layers are a classic bitmask use case. Each layer is a single bit, and an entity's collision mask is the bitwise OR of all layers it interacts with. The raw hex values are fine for the computer, but terrible for humans.
 
@@ -375,6 +356,8 @@ collider.mask = CollisionLayers::Player | CollisionLayers::World;
 ```
 
 ### The Code
+
+Create `src/engine/physics/collision_layers.h`:
 
 ```cpp
 // engine/physics/collision_layers.h
@@ -414,41 +397,38 @@ collider.mask = static_cast<uint32_t>(CollisionLayer::Player)
 collider.mask = CollisionLayers::Player | CollisionLayers::World;
 ```
 
-You *could* define operator overloads for the enum class, but that is a lot of boilerplate for something that `constexpr` constants in a namespace give you for free.
-
-**Why `constexpr`?** These values are compile-time constants. `constexpr` tells the compiler they can be used in constant expressions (template arguments, array sizes, `switch` cases) and guarantees zero runtime cost. They will be folded into the code at compile time, just like `#define` macros, but with type safety and proper scoping.
+**Why `constexpr`?** These values are compile-time constants. `constexpr` tells the compiler they can be used in constant expressions (template arguments, array sizes, `switch` cases) and guarantees zero runtime cost.
 
 **Why combined masks?** `Solid` and `Shootable` encode common collision rules that would otherwise be duplicated everywhere. If you add a new solid layer, you update `Solid` in one place.
 
-### Using the Layers
+### Updating AABBCollider
 
-When creating entities:
+Add `layer` and `mask` fields to your `AABBCollider` component in `src/engine/ecs/components.h`:
 
 ```cpp
-// Player entity
-auto& playerCollider = registry.emplace<BoxCollider>(player);
-playerCollider.layer = CollisionLayers::Player;
-playerCollider.mask  = CollisionLayers::World | CollisionLayers::Enemy | CollisionLayers::Trigger;
+#include "engine/physics/collision_layers.h"
 
-// World geometry
-auto& wallCollider = registry.emplace<BoxCollider>(wall);
-wallCollider.layer = CollisionLayers::World;
-wallCollider.mask  = CollisionLayers::All; // everything collides with walls
-
-// A trigger zone (non-solid, detects overlap only)
-auto& triggerCollider = registry.emplace<BoxCollider>(doorTrigger);
-triggerCollider.layer = CollisionLayers::Trigger;
-triggerCollider.mask  = CollisionLayers::Player; // only triggered by player
+struct AABBCollider
+{
+    glm::vec3 halfExtents = glm::vec3(0.5f);
+    bool isTrigger = false;
+    uint32_t layer = CollisionLayers::World;     // what layer am I on?
+    uint32_t mask  = CollisionLayers::All;        // what layers do I collide with?
+};
 ```
 
-In your collision system:
+Then update the collision check in `src/engine/ecs/systems/collision_system.cpp` to use these fields:
 
 ```cpp
-// Before: what does this mean?
-if ((a.layer & b.mask) && (a.layer != 0x10))
+// Before: everything collides with everything
+SweepResult hit = sweepAABB(entityBox, movement, otherBox);
 
-// After: self-documenting
-if ((a.layer & b.mask) && (a.layer != CollisionLayers::Trigger))
+// After: check layers first
+bool shouldCollide = (col.layer & otherCol.mask) != 0 &&
+                     (otherCol.layer & col.mask) != 0;
+if (!shouldCollide) continue;
+
+SweepResult hit = sweepAABB(entityBox, movement, otherBox);
 ```
 
 ---
@@ -463,6 +443,8 @@ We are not going to build a full scheduler here. That is a significant piece of 
 
 ### The Phase Enum
 
+Create `src/engine/core/system_phase.h`:
+
 ```cpp
 // engine/core/system_phase.h
 #pragma once
@@ -472,23 +454,21 @@ We are not going to build a full scheduler here. That is a significant piece of 
 // and future use (e.g. a scheduler), not for runtime dispatch.
 //
 // Phase order:
-//   1. Input       - Poll events, read input state, set intent components.
+//   1. Input       - Poll events, read input state.
 //                    Must run before anything reads input.
 //
-//   2. Physics     - Fixed timestep. Gravity, movement, collision detection
-//                    and response. Runs 0-N times per frame inside the
-//                    accumulator loop.
+//   2. Physics     - Fixed timestep. Gravity, friction, collision detection
+//                    and response, movement, ground detection.
+//                    Runs 0-N times per frame inside the accumulator loop.
 //
 //   3. GameLogic   - Gameplay rules that respond to physics results.
 //                    Health, scoring, state machines, AI decisions.
 //                    Runs once per frame, after all physics steps.
 //
 //   4. LateUpdate  - Post-logic cleanup. Camera follow, animation blending,
-//                    transform hierarchy propagation. Anything that must
-//                    read the final state of other systems.
+//                    transform hierarchy propagation.
 //
-//   5. Render      - Read positions (interpolated by alpha), submit draw
-//                    calls. Must be last.
+//   5. Render      - Read positions, submit draw calls. Must be last.
 
 enum class SystemPhase
 {
@@ -506,13 +486,283 @@ This is not arbitrary. Each phase has a reason for its position:
 
 **Input first** because every other system might read input. If you run physics before input, you are simulating with *last frame's* input -- one frame of latency that players can feel.
 
-**Physics second** because it runs at fixed rate inside the accumulator and must produce a consistent simulation state before game logic reacts to it. If collision detection runs after game logic, your "is the player touching the goal?" check uses stale positions.
+**Physics second** because it runs at fixed rate inside the accumulator and must produce a consistent simulation state before game logic reacts to it. Within the physics phase, the order matters too:
 
-**GameLogic third** because it needs the results of physics (who collided with what, where is everything) to make decisions. This is where you check if the player reached the exit, if an enemy took damage, if a timer expired.
+```
+physicsSystem          ← apply gravity and friction (modify velocities)
+collisionSystem        ← sweep and resolve against world + entities (correct velocities)
+movementSystem         ← apply final velocities to positions
+groundDetectionSystem  ← probe downward to update OnGround for next frame
+```
 
-**LateUpdate fourth** because it needs the final game state. The camera should follow the player's *final* position this frame, not the position before game logic teleported them.
+**GameLogic third** because it needs the results of physics (who collided with what, where is everything) to make decisions.
 
-**Render last** because it is read-only. It should never modify game state. It reads positions, interpolates by alpha, and draws.
+**LateUpdate fourth** because it needs the final game state. The camera should follow the player's *final* position this frame, not the position before game logic moved them.
+
+**Render last** because it is read-only. It should never modify game state.
+
+---
+
+## 5. Multiple Point Lights
+
+### The Problem
+
+Open `src/engine/ecs/systems/render_system.cpp` and look at the point light section:
+
+```cpp
+auto pointView = registry.view<Position, PointLight>();
+
+for (auto [entity, pos, light] : pointView.each())
+{
+    pointLightPos = pos.value;
+    pointLightColor = light.color;
+    pointAmbient = light.ambientStrength;
+    hasPointLight = true;
+    break;  // <── only the first point light is ever used
+}
+```
+
+And in `assets/shaders/lit.frag`, the attenuation values are hardcoded:
+
+```glsl
+float attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance);
+```
+
+The `PointLight` component has `linear` and `quadratic` fields that are never sent to the shader. This means every point light has identical falloff regardless of what values you set in the component.
+
+### The Fix: Shader
+
+We need the fragment shader to accept an **array** of point lights. GLSL supports this with structs and uniform arrays. Replace the point light section of `assets/shaders/lit.frag`:
+
+```glsl
+#version 460 core
+
+in vec3 FragPos;
+in vec3 Normal;
+in vec2 TexCoord;
+
+out vec4 FragColor;
+
+// Material
+uniform sampler2D textureSampler;
+uniform float shininess;
+
+// Directional light
+uniform vec3 dirLightDir;
+uniform vec3 dirLightColor;
+uniform float dirLightAmbient;
+uniform bool hasDirLight;
+
+// Point lights — supports up to MAX_POINT_LIGHTS simultaneously
+#define MAX_POINT_LIGHTS 8
+
+struct PointLightData {
+    vec3 position;
+    vec3 color;
+    float ambient;
+    float linear;
+    float quadratic;
+};
+
+uniform int numPointLights;
+uniform PointLightData pointLights[MAX_POINT_LIGHTS];
+
+// Camera
+uniform vec3 viewPos;
+
+// ─── Helper: calculate one point light's contribution ──────────
+vec3 calcPointLight(PointLightData light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 texColor)
+{
+    vec3 lDir = normalize(light.position - fragPos);
+
+    float distance = length(light.position - fragPos);
+    float attenuation = 1.0 / (1.0 + light.linear * distance + light.quadratic * distance * distance);
+
+    vec3 ambient = light.ambient * light.color;
+
+    float diff = max(dot(normal, lDir), 0.0);
+    vec3 diffuse = diff * light.color;
+
+    vec3 reflectDir = reflect(-lDir, normal);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
+    vec3 specular = spec * light.color;
+
+    return (ambient + (diffuse + specular) * attenuation) * texColor;
+}
+
+void main() {
+    vec3 texColor = texture(textureSampler, TexCoord).rgb;
+    vec3 norm = normalize(Normal);
+    vec3 viewDir = normalize(viewPos - FragPos);
+
+    vec3 result = vec3(0.0);
+
+    // ─── Directional light contribution ──────────────────────────
+    if (hasDirLight) {
+        vec3 lDir = normalize(-dirLightDir);
+
+        vec3 ambient = dirLightAmbient * dirLightColor;
+
+        float diff = max(dot(norm, lDir), 0.0);
+        vec3 diffuse = diff * dirLightColor;
+
+        vec3 reflectDir = reflect(-lDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
+        vec3 specular = spec * dirLightColor;
+
+        result += (ambient + diffuse + specular) * texColor;
+    }
+
+    // ─── Point light contributions (all of them) ─────────────────
+    for (int i = 0; i < numPointLights; i++) {
+        result += calcPointLight(pointLights[i], norm, FragPos, viewDir, texColor);
+    }
+
+    FragColor = vec4(result, 1.0);
+}
+```
+
+### Why This Design?
+
+**Why `#define MAX_POINT_LIGHTS 8`?** GLSL requires a compile-time constant for array sizes. 8 is enough for most scenes and keeps uniform buffer usage reasonable. If you need more, just increase it — the only cost is GPU register pressure.
+
+**Why a helper function?** The per-light calculation is identical for every point light. Extracting it into `calcPointLight()` keeps the main function readable and avoids a giant nested loop body.
+
+**Why pass `linear` and `quadratic` per-light?** Different lights should have different falloff ranges. A torch illuminates a few metres; a floodlight illuminates a room. The `PointLight` component already has these fields — now they actually reach the shader.
+
+### The Fix: Render System
+
+Update `src/engine/ecs/systems/render_system.cpp` to collect all point lights and pass them as an array. Replace the single-light collection with:
+
+```cpp
+// ─── Collect point lights ────────────────────────────────────
+struct PointLightGPU {
+    glm::vec3 position;
+    glm::vec3 color;
+    float ambient;
+    float linear;
+    float quadratic;
+};
+
+constexpr int MAX_POINT_LIGHTS = 8;
+PointLightGPU pointLightsData[MAX_POINT_LIGHTS];
+int numPointLights = 0;
+
+auto pointView = registry.view<Position, PointLight>();
+for (auto [entity, pos, light] : pointView.each())
+{
+    if (numPointLights >= MAX_POINT_LIGHTS) break;
+
+    pointLightsData[numPointLights] = {
+        pos.value,
+        light.color,
+        light.ambientStrength,
+        light.linear,
+        light.quadratic
+    };
+    numPointLights++;
+}
+```
+
+Then in the draw loop, replace the old single-light uniform block with:
+
+```cpp
+// Point lights
+loc = glGetUniformLocation(mesh.shaderId, "numPointLights");
+glUniform1i(loc, numPointLights);
+
+for (int i = 0; i < numPointLights; i++)
+{
+    std::string prefix = "pointLights[" + std::to_string(i) + "].";
+
+    loc = glGetUniformLocation(mesh.shaderId, (prefix + "position").c_str());
+    glUniform3fv(loc, 1, &pointLightsData[i].position[0]);
+
+    loc = glGetUniformLocation(mesh.shaderId, (prefix + "color").c_str());
+    glUniform3fv(loc, 1, &pointLightsData[i].color[0]);
+
+    loc = glGetUniformLocation(mesh.shaderId, (prefix + "ambient").c_str());
+    glUniform1f(loc, pointLightsData[i].ambient);
+
+    loc = glGetUniformLocation(mesh.shaderId, (prefix + "linear").c_str());
+    glUniform1f(loc, pointLightsData[i].linear);
+
+    loc = glGetUniformLocation(mesh.shaderId, (prefix + "quadratic").c_str());
+    glUniform1f(loc, pointLightsData[i].quadratic);
+}
+```
+
+Remove the old `hasPointLight`, `pointLightPos`, `pointLightColor`, and `pointLightAmbient` variables and their uniform calls — they are fully replaced by the array.
+
+### Performance Note
+
+Calling `glGetUniformLocation` with string concatenation in a loop every frame is not ideal. For a learning project this is fine — the cost is negligible compared to the draw calls themselves. In a production engine, you would cache the uniform locations once after shader compilation. We will revisit this in a later cleanup chapter.
+
+---
+
+## 6. Remove Test Entities
+
+The two test cubes (`cube` and `cube2`) in `src/engine/ecs/scene_setup.cpp` have served their purpose. They were useful for verifying:
+
+- Rendering works (Chapter 5)
+- Collision works (Chapter 9 -- `cube` gained `Velocity` and `AABBCollider`)
+- Physics works (Chapter 10 -- `cube2` gained `Gravity` and `OnGround`)
+
+From Chapter 11 onward, we will create proper interactive entities (doors, lifts, pickups, enemies). The test cubes would just be clutter.
+
+Remove both test cube blocks from `setupScene()` in `src/engine/ecs/scene_setup.cpp`. Your `setupScene` function should now only contain:
+
+- Level geometry creation (`createTestLevel()` and sector entity loop)
+- Lights (directional sun + point light torch)
+
+```cpp
+Level setupScene(entt::registry& registry, const ResourceManager& resources)
+{
+    auto litShader = resources.getShader("lit");
+    auto wallTexture = resources.getTexture("wall");
+
+    // ─── Create the level geometry ───────────────────────────────
+    Level level = createTestLevel();
+
+    for (const auto& sector : level.sectors)
+    {
+        if (!sector.mesh) continue;
+
+        auto sectorEntity = registry.create();
+        registry.emplace<Position>(sectorEntity, glm::vec3(0.0f));
+        registry.emplace<MeshRenderer>
+        (
+            sectorEntity,
+            sector.mesh->getVAO(),
+            0u,
+            litShader->getId(),
+            wallTexture->getId(),
+            true,
+            sector.mesh->getIndexCount()
+        );
+    }
+
+    // ─── Lights ──────────────────────────────────────────────────
+    auto sun = registry.create();
+    registry.emplace<DirectionalLight>
+    (
+        sun, glm::vec3(-0.2f, -1.0f, -0.3f),
+        glm::vec3(1.0f, 0.95f, 0.8f), 0.1f
+    );
+
+    auto torch = registry.create();
+    registry.emplace<Position>(torch, glm::vec3(3.0f, 2.0f, -1.0f));
+    registry.emplace<PointLight>
+    (
+        torch, glm::vec3(2.0f, 1.4f, 0.6f),
+        0.15f, 0.045f, 0.0075f
+    );
+
+    return level;
+}
+```
+
+You can also remove the `cubeMesh` resource load from `setupScene` since no entities use it anymore. The `cube.obj` mesh asset stays in your project -- later chapters will use it for interactive objects.
 
 ---
 
@@ -526,71 +776,95 @@ Now let us put it all together. Here is the refactored game loop:
 #include "engine/core/window.h"
 #include "engine/core/input_manager.h"
 #include "engine/core/resource_manager.h"
-#include "engine/core/mesh_factory.h"
 #include "engine/core/fixed_timestep.h"
-#include "engine/core/system_phase.h"
+#include "engine/ecs/components.h"
+#include "engine/ecs/scene_setup.h"
+#include "engine/ecs/systems/render_system.h"
+#include "engine/ecs/systems/collision_system.h"
+#include "engine/ecs/systems/movement_system.h"
+#include "engine/ecs/systems/physics_system.h"
+#include "engine/physics/spatial_hash.h"
 #include "engine/physics/physics_config.h"
-#include "engine/physics/collision_layers.h"
+#include "engine/renderer/camera.h"
 
-// ... other includes ...
+#include <entt/entt.hpp>
 
 int main()
 {
-	Window window(1280, 720, "QEngine");
-	InputManager input;
-	input.init(window.getHandle());
-	ResourceManager resources;
+    Window window(1280, 720, "QEngine");
 
-	// ... resource loading, mesh creation ...
+    InputManager input;
+    input.init(window.getHandle());
 
-	entt::registry registry;
+    ResourceManager resources;
 
-	// --- Configuration ---
-	auto& physicsConfig = registry.ctx().emplace<PhysicsConfig>();
-	// Override defaults if desired:
-	// physicsConfig.gravity = 15.0f;  // heavier feel
-	// physicsConfig.airControl = 0.5f; // more air control
+    // ... resource loading (shaders, textures) ...
 
-	// --- Entity creation ---
-	setupScene(registry, /* ... */);
-	auto& playerCollider = registry.emplace<BoxCollider>(player);
-	playerCollider.layer = CollisionLayers::Player;
-	playerCollider.mask  = CollisionLayers::World | CollisionLayers::Enemy | CollisionLayers::Trigger;
+    Camera camera(glm::vec3(0.0f, 1.7f, 3.0f));
 
-	// --- Game loop ---
-	FixedTimestep fixedTimestep(physicsConfig.fixedDeltaTime);
+    entt::registry registry;
 
-	while (!window.shouldClose())
-	{
-		fixedTimestep.accumulate();
+    // --- Configuration ---
+    auto& physicsConfig = registry.ctx().emplace<PhysicsConfig>();
+    // Override defaults if desired:
+    // physicsConfig.terminalVelocity = 30.0f;  // slower falling
 
-		// -- Phase: Input --
-		input.update();
-		window.pollEvents();
-		inputSystem(registry);
+    // --- Scene ---
+    Level level = setupScene(registry, resources);
+    SpatialHash spatialHash(4.0f);
 
-		// -- Phase: Physics (fixed timestep) --
-		while (fixedTimestep.step())
-		{
-			gravitySystem(registry);
-			movementSystem(registry);
-			collisionSystem(registry);
-			jumpSystem(registry);
-		}
+    // --- Game loop ---
+    FixedTimestep fixedTimestep(physicsConfig.fixedDeltaTime);
 
-		// -- Phase: GameLogic --
-		// (future: scoring, health, AI, state machines)
+    glEnable(GL_DEPTH_TEST);
 
-		// -- Phase: LateUpdate --
-		cameraFollowSystem(registry);
+    while (!window.shouldClose())
+    {
+        fixedTimestep.accumulate((float)glfwGetTime());
+        float frameTime = fixedTimestep.getFrameTime();
 
-		// -- Phase: Render --
-		renderSystem(registry, fixedTimestep.getAlpha());
+        // -- Phase: Input --
+        input.update();
+        window.pollEvents();
 
-		window.swapBuffers();
-	}
+        if (input.isKeyPressed(GLFW_KEY_ESCAPE))
+            glfwSetWindowShouldClose(window.getHandle(), true);
 
-	// ... cleanup ...
+        if (input.isKeyPressed(GLFW_KEY_W))
+            camera.processKeyboard(Camera::FORWARD, frameTime);
+        if (input.isKeyPressed(GLFW_KEY_S))
+            camera.processKeyboard(Camera::BACKWARD, frameTime);
+        if (input.isKeyPressed(GLFW_KEY_A))
+            camera.processKeyboard(Camera::LEFT, frameTime);
+        if (input.isKeyPressed(GLFW_KEY_D))
+            camera.processKeyboard(Camera::RIGHT, frameTime);
+
+        camera.processMouse(input.getMouseXOffset(), input.getMouseYOffset());
+
+        // -- Phase: Physics (fixed timestep) --
+        while (fixedTimestep.step())
+        {
+            physicsSystem(registry);
+            collisionSystem(registry, spatialHash, level);
+            movementSystem(registry);
+            groundDetectionSystem(registry, level);
+        }
+
+        // -- Phase: GameLogic --
+        // (future: scoring, health, AI, state machines)
+
+        // -- Phase: Render --
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        float aspectRatio = (float)window.getWidth() / (float)window.getHeight();
+        renderSystem(registry, camera, aspectRatio);
+
+        window.swapBuffers();
+    }
+
+    resources.clear();
+    return 0;
 }
 ```
 
@@ -598,10 +872,12 @@ Compare this with the "before" version. The game loop is now:
 
 - **Shorter** -- the accumulator boilerplate is gone, replaced by three method calls
 - **Self-documenting** -- phase comments make the execution order explicit
-- **Magic-number-free** -- all physics constants live in `PhysicsConfig`, all collision layers have names
-- **Consistent** -- every physics system reads the same config struct, so gravity cannot disagree with itself
+- **Magic-number-free** -- terminal velocity and timestep live in `PhysicsConfig`, collision layers have names
+- **Consistent** -- every physics system reads the same config struct
+- **Properly lit** -- all point lights render, with per-light attenuation
+- **Clean** -- test entities removed, ready for real game content
 
-And we did not add any frameworks, any virtual dispatch, any complex abstractions. Just a small class, a struct, a namespace, and some comments.
+And we did not add any frameworks, any virtual dispatch, any complex abstractions. Just a small class, a struct, a namespace, some shader work, and some comments.
 
 ---
 
@@ -610,48 +886,60 @@ And we did not add any frameworks, any virtual dispatch, any complex abstraction
 After this cleanup, your project tree should look like this (showing only the files we added or modified):
 
 ```
-engine/
-├── core/
-│   ├── fixed_timestep.h      ← NEW: accumulator pattern
-│   └── system_phase.h        ← NEW: phase ordering documentation
-├── physics/
-│   ├── physics_config.h      ← NEW: centralised physics parameters
-│   ├── collision_layers.h    ← NEW: named bitmask constants
-│   ├── gravity_system.h      ← MODIFIED: reads PhysicsConfig from context
-│   ├── movement_system.h     ← MODIFIED: reads PhysicsConfig from context
-│   ├── collision_system.h    ← MODIFIED: uses CollisionLayers namespace
-│   └── jump_system.h         ← MODIFIED: reads PhysicsConfig from context
-└── ...
-main.cpp                       ← MODIFIED: uses FixedTimestep, phase comments
+assets/
+└── shaders/
+    └── lit.frag                    ← MODIFIED: multi-point-light support
+src/
+├── engine/
+│   ├── core/
+│   │   ├── fixed_timestep.h        ← NEW: accumulator pattern
+│   │   └── system_phase.h          ← NEW: phase ordering documentation
+│   ├── ecs/
+│   │   ├── components.h            ← MODIFIED: AABBCollider gains layer/mask
+│   │   ├── scene_setup.cpp         ← MODIFIED: test cubes removed
+│   │   └── systems/
+│   │       ├── render_system.cpp   ← MODIFIED: passes all point lights to shader
+│   │       ├── physics_system.h    ← MODIFIED: dt removed from signatures
+│   │       ├── physics_system.cpp  ← MODIFIED: reads PhysicsConfig from context
+│   │       ├── collision_system.cpp← MODIFIED: uses CollisionLayers, reads config
+│   │       └── movement_system.cpp ← MODIFIED: reads PhysicsConfig from context
+│   └── physics/
+│       ├── physics_config.h        ← NEW: centralised physics parameters
+│       └── collision_layers.h      ← NEW: named bitmask constants
+└── main.cpp                        ← MODIFIED: uses FixedTimestep, phase comments
 ```
 
-All four new files are header-only. No `.cpp` files, no additional compilation units, no build system changes. Include and go.
+All new C++ files are header-only. No additional `.cpp` files, no build system changes. Include and go.
 
 ---
 
 ## Exercises
 
-1. **Add a debug overlay** that displays the current `PhysicsConfig` values on screen. Bonus: make them adjustable with keyboard shortcuts so you can tweak physics feel at runtime.
+1. **Add a debug overlay** that prints `PhysicsConfig` values to the console on a keypress. Bonus: make them adjustable with keyboard shortcuts so you can tweak physics feel at runtime.
 
-2. **Add a `CollisionLayers::Pickup` layer** (value `0x20`). Create a pickup entity that only the player can collide with, and add it to a `Collectible` combined mask.
+2. **Add a `CollisionLayers::Pickup` layer** (value `0x20`). Add it to a `Collectible` combined mask alongside `Player`.
 
-3. **Add the manual `accumulate(float deltaTime)` overload** to `FixedTimestep`. Write a test that accumulates exactly 3 timesteps worth of time and verifies that `step()` returns `true` exactly 3 times, then `false`.
+3. **Add a manual `accumulate(float deltaTime)` overload** to `FixedTimestep` for testing. Verify that accumulating exactly 3 timesteps worth of time makes `step()` return `true` exactly 3 times.
 
-4. **Create a "moon gravity" power-up** that halves `PhysicsConfig::gravity` for 5 seconds. Think about where the timer logic belongs (hint: Phase 3, GameLogic).
+4. **Create a "moon gravity" mode** toggled by a key. Halve `PhysicsConfig::terminalVelocity` and modify the `Gravity` component on all entities. Think about where the toggle logic belongs (hint: Phase 1, Input).
 
 ---
 
 ## Key Takeaways
 
-- **The accumulator pattern is always the same.** Extract it once, use it forever. The `FixedTimestep` class is maybe 40 lines and eliminates a whole class of copy-paste bugs.
+- **The accumulator pattern is always the same.** Extract it once, use it forever. The `FixedTimestep` class is maybe 50 lines and eliminates a whole class of copy-paste bugs.
 
 - **Registry context is your friend for global config.** `registry.ctx().emplace<T>()` gives you a typed singleton attached to the registry's lifetime. No globals, no singletons, no service locators -- just a struct that lives where your entities live.
 
+- **Per-entity values belong in components; global values belong in context.** Gravity strength varies per entity (a balloon vs a crate), so it lives in the `Gravity` component. Terminal velocity is a simulation-wide constant, so it lives in `PhysicsConfig`.
+
 - **Named constants are not optional.** `CollisionLayers::Player | CollisionLayers::World` is code that explains itself. `0x03` is code that demands a comment, and comments go stale.
 
-- **Document your system order even if you do not enforce it.** A `// -- Phase: Physics --` comment costs nothing and saves real debugging time. When you are ready for a proper scheduler (probably around Chapter 15 or so), the phases are already defined.
+- **Document your system order even if you do not enforce it.** A `// -- Phase: Physics --` comment costs nothing and saves real debugging time.
 
-- **Cleanup chapters are features.** Readable, maintainable code is not a luxury. It is what lets you keep building. Every chapter from here on benefits from the work we did today.
+- **If you have data in a component, use it.** The `PointLight` component had `linear` and `quadratic` fields from day one, but the shader hardcoded its own values. Unused component fields are a code smell -- either the component is over-designed, or the system is under-implemented. In this case, it was the latter.
+
+- **Clean up after yourself.** Removing the test cubes is not busywork -- it prevents confusion. Every entity in your scene should have a reason to exist. From Chapter 11 onward, every entity will be a real part of the game.
 
 ---
 
