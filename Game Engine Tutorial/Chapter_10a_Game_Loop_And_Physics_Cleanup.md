@@ -17,7 +17,7 @@ This chapter is a **cleanup pass** -- no new features, just organising what we h
 3. **CollisionLayers** -- implement the bitmask constants previewed in Chapter 10
 4. **System phase ordering** -- document and formalise the execution order
 5. **Multiple point lights** -- upgrade the renderer from one point light to many
-6. **Remove test entities** -- the test cubes have served their purpose
+6. **Test, then remove test entities** -- verify everything works before cleaning up
 
 By the end, your game loop will be shorter, your physics parameters will live in one place, your lighting will actually work with multiple sources, and the next person to read your code (including future you) will thank you.
 
@@ -273,9 +273,13 @@ struct PhysicsConfig
 
 ### Updating Your Systems
 
-Here is how `physicsSystem` changes. Before:
+Open `src/engine/ecs/systems/physics_system.cpp`. Here is how `physicsSystem` changes.
+
+Before:
 
 ```cpp
+// src/engine/ecs/systems/physics_system.cpp (before)
+
 void physicsSystem(entt::registry& registry, float dt)
 {
     auto gravityView = registry.view<Velocity, Gravity, OnGround>();
@@ -299,6 +303,10 @@ void physicsSystem(entt::registry& registry, float dt)
 After:
 
 ```cpp
+// src/engine/ecs/systems/physics_system.cpp (after)
+
+#include "engine/physics/physics_config.h"  // ← add this include
+
 void physicsSystem(entt::registry& registry)
 {
     const auto& config = registry.ctx().get<PhysicsConfig>();
@@ -320,11 +328,208 @@ void physicsSystem(entt::registry& registry)
 }
 ```
 
-Notice the system no longer takes `dt` as a parameter. It reads the timestep and terminal velocity from the registry context. Apply the same treatment to `movementSystem` and `collisionSystem` -- replace their `float dt` parameter with `registry.ctx().get<PhysicsConfig>().fixedDeltaTime`.
+Notice the system no longer takes `dt` as a parameter. It reads the timestep and terminal velocity from the registry context. Now apply the same treatment to `movementSystem` and `collisionSystem`.
 
-Update `physics_system.h` to reflect the new signatures:
+### Movement System
+
+`src/engine/ecs/systems/movement_system.cpp`
+
+Before:
 
 ```cpp
+// src/engine/ecs/systems/movement_system.cpp (before)
+
+#include "engine/ecs/systems/movement_system.h"
+#include "engine/ecs/components.h"
+
+void movementSystem(entt::registry& registry, float dt)
+{
+	auto view = registry.view<Position, Velocity>();
+
+	for (auto [entity, pos, vel] : view.each())
+	{
+		pos.value += vel.value * dt;
+	}
+}
+```
+
+After:
+
+```cpp
+// src/engine/ecs/systems/movement_system.cpp (after)
+
+#include "engine/ecs/systems/movement_system.h"
+#include "engine/ecs/components.h"
+#include "engine/physics/physics_config.h"  // ← add this include
+
+void movementSystem(entt::registry& registry)
+{
+	const auto& config = registry.ctx().get<PhysicsConfig>();
+
+	auto view = registry.view<Position, Velocity>();
+
+	for (auto [entity, pos, vel] : view.each())
+	{
+		pos.value += vel.value * config.fixedDeltaTime;
+	}
+}
+```
+
+Update the header to match:
+
+Before:
+
+```cpp
+// src/engine/ecs/systems/movement_system.h (before)
+#pragma once
+
+#include <entt/entt.hpp>
+
+void movementSystem(entt::registry& registry, float dt);
+```
+
+After:
+
+```cpp
+// src/engine/ecs/systems/movement_system.h (after)
+#pragma once
+
+#include <entt/entt.hpp>
+
+void movementSystem(entt::registry& registry);
+```
+
+### Collision System
+
+`src/engine/ecs/systems/collision_system.cpp` — the only change is the signature and how `movement` is calculated. The rest of the function stays the same.
+
+Before:
+
+```cpp
+// src/engine/ecs/systems/collision_system.cpp (before — just the top of the function)
+
+#include "engine/ecs/systems/collision_system.h"
+#include "engine/ecs/components.h"
+#include "engine/physics/aabb.h"
+#include "engine/physics/collision.h"
+
+void collisionSystem
+(
+	entt::registry& registry,
+	SpatialHash& spatialHash,
+	const Level& level,
+	float dt
+)
+{
+	// rebuild the spatial hash each frame
+	spatialHash.clear();
+	// ... insert entities into spatial hash ...
+
+	auto movers = registry.view<Position, Velocity, AABBCollider>();
+
+	for (auto [entity, pos, vel, col] : movers.each())
+	{
+		glm::vec3 movement = vel.value * dt;
+		// ... rest of sweep logic unchanged ...
+	}
+}
+```
+
+After:
+
+```cpp
+// src/engine/ecs/systems/collision_system.cpp (after — just the top of the function)
+
+#include "engine/ecs/systems/collision_system.h"
+#include "engine/ecs/components.h"
+#include "engine/physics/aabb.h"
+#include "engine/physics/collision.h"
+#include "engine/physics/physics_config.h"  // ← add this include
+
+void collisionSystem
+(
+	entt::registry& registry,
+	SpatialHash& spatialHash,
+	const Level& level
+)
+{
+	const auto& config = registry.ctx().get<PhysicsConfig>();
+
+	// rebuild the spatial hash each frame
+	spatialHash.clear();
+	// ... insert entities into spatial hash ...
+
+	auto movers = registry.view<Position, Velocity, AABBCollider>();
+
+	for (auto [entity, pos, vel, col] : movers.each())
+	{
+		glm::vec3 movement = vel.value * config.fixedDeltaTime;
+		// ... rest of sweep logic unchanged ...
+	}
+}
+```
+
+Update the header to match:
+
+Before:
+
+```cpp
+// src/engine/ecs/systems/collision_system.h (before)
+#pragma once
+
+#include <entt/entt.hpp>
+#include "engine/physics/spatial_hash.h"
+#include "engine/level/level.h"
+
+void collisionSystem
+(
+	entt::registry& registry,
+	SpatialHash& spatialHash,
+	const Level& level,
+	float dt
+);
+```
+
+After:
+
+```cpp
+// src/engine/ecs/systems/collision_system.h (after)
+#pragma once
+
+#include <entt/entt.hpp>
+#include "engine/physics/spatial_hash.h"
+#include "engine/level/level.h"
+
+void collisionSystem
+(
+	entt::registry& registry,
+	SpatialHash& spatialHash,
+	const Level& level
+);
+```
+
+### Physics System Header
+
+Update `src/engine/ecs/systems/physics_system.h` to reflect the new signature (shown earlier in the `.cpp` before/after):
+
+Before:
+
+```cpp
+// src/engine/ecs/systems/physics_system.h (before)
+#pragma once
+
+#include <entt/entt.hpp>
+
+struct Level;
+
+void physicsSystem(entt::registry& registry, float dt);
+void groundDetectionSystem(entt::registry& registry, const Level& level);
+```
+
+After:
+
+```cpp
+// src/engine/ecs/systems/physics_system.h (after)
 #pragma once
 
 #include <entt/entt.hpp>
@@ -335,7 +540,7 @@ void physicsSystem(entt::registry& registry);
 void groundDetectionSystem(entt::registry& registry, const Level& level);
 ```
 
-Note that `groundDetectionSystem` keeps its `Level` parameter -- it needs the level geometry, which is not a registry context variable.
+Note that `groundDetectionSystem` keeps its `Level` parameter and `collisionSystem` keeps its `SpatialHash&` and `Level&` parameters — they need those objects directly, not from the registry context. The only parameter removed from each system is `float dt`.
 
 ---
 
@@ -417,19 +622,66 @@ struct AABBCollider
 };
 ```
 
-Then update the collision check in `src/engine/ecs/systems/collision_system.cpp` to use these fields:
+Then update `src/engine/ecs/systems/collision_system.cpp` to use these fields. There are two places where collision is checked — entity-vs-level and entity-vs-entity. The layer check only applies to the **entity-vs-entity** path, since level geometry is always solid.
+
+Find the entity-vs-entity section inside the sector loop. Before:
 
 ```cpp
-// Before: everything collides with everything
-SweepResult hit = sweepAABB(entityBox, movement, otherBox);
+// check against other entities
+auto nearby = spatialHash.query(pos.value, col.halfExtents + glm::vec3(2.0f));
+for (auto other : nearby)
+{
+    if (other == entity) continue;
+    if (!registry.all_of<Position, AABBCollider>(other)) continue;
 
-// After: check layers first
-bool shouldCollide = (col.layer & otherCol.mask) != 0 &&
-                     (otherCol.layer & col.mask) != 0;
-if (!shouldCollide) continue;
+    auto& otherPos = registry.get<Position>(other);
+    auto& otherCol = registry.get<AABBCollider>(other);
+    AABB otherBox = AABB::fromCentreSize(otherPos.value, otherCol.halfExtents);
 
-SweepResult hit = sweepAABB(entityBox, movement, otherBox);
+    // if it's a trigger, don't resolve - just detect
+    if (otherCol.isTrigger)
+    {
+        // ...
+        continue;
+    }
+
+    SweepResult hit = sweepAABB(entityBox, movement, otherBox);
+    // ...
+}
 ```
+
+After — add the layer check right after the trigger check:
+
+```cpp
+// check against other entities
+auto nearby = spatialHash.query(pos.value, col.halfExtents + glm::vec3(2.0f));
+for (auto other : nearby)
+{
+    if (other == entity) continue;
+    if (!registry.all_of<Position, AABBCollider>(other)) continue;
+
+    auto& otherPos = registry.get<Position>(other);
+    auto& otherCol = registry.get<AABBCollider>(other);
+    AABB otherBox = AABB::fromCentreSize(otherPos.value, otherCol.halfExtents);
+
+    // if it's a trigger, don't resolve - just detect
+    if (otherCol.isTrigger)
+    {
+        // ...
+        continue;
+    }
+
+    // ← NEW: check collision layers
+    bool shouldCollide = (col.layer & otherCol.mask) != 0 &&
+                         (otherCol.layer & col.mask) != 0;
+    if (!shouldCollide) continue;
+
+    SweepResult hit = sweepAABB(entityBox, movement, otherBox);
+    // ...
+}
+```
+
+The layer check is **bidirectional**: entity A must be on a layer that B cares about, *and* B must be on a layer that A cares about. This prevents asymmetric collisions where one entity blocks another but not the reverse.
 
 ---
 
@@ -632,9 +884,40 @@ void main() {
 
 ### The Fix: Render System
 
-Update `src/engine/ecs/systems/render_system.cpp` to collect all point lights and pass them as an array. Replace the single-light collection with:
+There are two changes in `src/engine/ecs/systems/render_system.cpp`: the light collection at the top of the function, and the uniform upload inside the draw loop.
+
+You will also need to add `#include <string>` at the top of the file for `std::to_string`.
+
+**Change 1: Light collection.** Find the point light collection block near the top of `renderSystem()`.
+
+Before:
 
 ```cpp
+// src/engine/ecs/systems/render_system.cpp — light collection (before)
+
+// point light (use first one found)
+glm::vec3 pointLightPos(0.0f);
+glm::vec3 pointLightColor(0.0f);
+float pointAmbient = 0.05f;
+bool hasPointLight = false;
+
+auto pointView = registry.view<Position, PointLight>();
+
+for (auto [entity, pos, light] : pointView.each())
+{
+    pointLightPos = pos.value;
+    pointLightColor = light.color;
+    pointAmbient = light.ambientStrength;
+    hasPointLight = true;
+    break;
+}
+```
+
+After:
+
+```cpp
+// src/engine/ecs/systems/render_system.cpp — light collection (after)
+
 // ─── Collect point lights ────────────────────────────────────
 struct PointLightGPU {
     glm::vec3 position;
@@ -664,9 +947,38 @@ for (auto [entity, pos, light] : pointView.each())
 }
 ```
 
-Then in the draw loop, replace the old single-light uniform block with:
+The four single-light variables (`pointLightPos`, `pointLightColor`, `pointAmbient`, `hasPointLight`) are gone, replaced by an array that collects up to 8 lights.
+
+**Change 2: Uniform upload.** Inside the draw loop, find the block that sends point light uniforms to the shader.
+
+Before:
 
 ```cpp
+// src/engine/ecs/systems/render_system.cpp — draw loop uniforms (before)
+
+loc = glGetUniformLocation(mesh.shaderId, "hasPointLight");
+glUniform1i(loc, hasPointLight ? 1 : 0);
+
+// ... (hasDirLight block stays the same) ...
+
+if (hasPointLight)
+{
+    loc = glGetUniformLocation(mesh.shaderId, "pointLightPos");
+    glUniform3fv(loc, 1, &pointLightPos[0]);
+    loc = glGetUniformLocation(mesh.shaderId, "pointLightColor");
+    glUniform3fv(loc, 1, &pointLightColor[0]);
+    loc = glGetUniformLocation(mesh.shaderId, "pointLightAmbient");
+    glUniform1f(loc, pointAmbient);
+}
+```
+
+After:
+
+```cpp
+// src/engine/ecs/systems/render_system.cpp — draw loop uniforms (after)
+
+// ... (hasDirLight block stays the same) ...
+
 // Point lights
 loc = glGetUniformLocation(mesh.shaderId, "numPointLights");
 glUniform1i(loc, numPointLights);
@@ -692,7 +1004,7 @@ for (int i = 0; i < numPointLights; i++)
 }
 ```
 
-Remove the old `hasPointLight`, `pointLightPos`, `pointLightColor`, and `pointLightAmbient` variables and their uniform calls — they are fully replaced by the array.
+Remove the `hasPointLight` uniform line entirely — the shader now uses `numPointLights` (which is 0 when there are no lights) instead of a boolean flag.
 
 ### Performance Note
 
@@ -700,13 +1012,22 @@ Calling `glGetUniformLocation` with string concatenation in a loop every frame i
 
 ---
 
-## 6. Remove Test Entities
+## 6. Test, Then Remove Test Entities
 
-The two test cubes (`cube` and `cube2`) in `src/engine/ecs/scene_setup.cpp` have served their purpose. They were useful for verifying:
+Before removing anything, **verify that all the changes in this chapter work correctly**. The test cubes are your best diagnostic tool — leave them in and rebuild:
+
+- **`cube`** (the sliding cube at `(-3, 0.5, -3)`) has `Velocity` and `AABBCollider`. It should slide along +X and collide with the wall. This confirms `movementSystem` and `collisionSystem` are receiving time correctly via `PhysicsConfig`.
+- **`cube2`** (the falling cube at `(2, 4, 0)`) has `Gravity`, `OnGround`, and `AABBCollider`. It should fall under gravity and land on the floor. This confirms `physicsSystem` and `groundDetectionSystem` are working with the new signatures.
+- **The point light** (the torch at `(3, 2, -1)`) should cast a visible warm glow on nearby surfaces. This confirms the multi-point-light shader and render system changes are working.
+
+If any of those are not working, you have a bug in one of the earlier sections — go back and check before continuing.
+
+Once everything works, the test cubes have served their purpose. They were useful for verifying:
 
 - Rendering works (Chapter 5)
 - Collision works (Chapter 9 -- `cube` gained `Velocity` and `AABBCollider`)
 - Physics works (Chapter 10 -- `cube2` gained `Gravity` and `OnGround`)
+- **This chapter's cleanup** -- all systems still work after removing `float dt` and switching to `PhysicsConfig`
 
 From Chapter 11 onward, we will create proper interactive entities (doors, lifts, pickups, enemies). The test cubes would just be clutter.
 

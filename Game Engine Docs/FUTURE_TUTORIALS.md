@@ -21,3 +21,22 @@ Tutorials that need to be written but don't yet exist. These cover concepts intr
 **Why it was deferred**: The implementation requires multiple swept AABB checks in sequence and a player entity that walks around. Chapter 10 only has a fly camera, so there's nothing to walk up stairs with yet.
 
 ---
+
+## Cached Uniform Locations
+
+**Source**: Chapter 10a (Game Loop & Physics Cleanup) — performance note in the Multiple Point Lights section
+
+**What it covers**:
+- Cache `glGetUniformLocation` results once after shader compilation instead of calling per-frame
+- A uniform cache struct or map keyed by uniform name, populated on shader load
+- Eliminates string concatenation and hash lookups inside the draw loop
+
+**Prerequisites**:
+- Multi-point-light rendering (Chapter 10a)
+- Shader class that knows its own program ID
+
+**Why it was deferred**: The per-frame cost of `glGetUniformLocation` with string concatenation is negligible for a small number of lights and draw calls. It becomes a real concern when the scene has many objects and many lights. Best addressed as part of a broader rendering cleanup.
+
+**Likely home**: Cleanup 30a (Rendering Pipeline Cleanup) — already lists "shader cache" and "draw call batching audit" as targets.
+
+---
