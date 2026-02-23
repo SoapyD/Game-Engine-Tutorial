@@ -641,9 +641,9 @@ Level setupScene(entt::registry& registry, const ResourceManager& resources)
         true, cubeMesh->getIndexCount()
     );
 
-    auto wall = registry.create();
-    registry.emplace<Position>(wall, glm::vec3(2.0f, 0.5f, -3.0f));
-    registry.emplace<MeshRenderer>(wall,
+    auto cube2 = registry.create();
+    registry.emplace<Position>(cube2, glm::vec3(2.0f, 0.5f, -3.0f));
+    registry.emplace<MeshRenderer>(cube2,
         cubeMesh->getVAO(), 0u,
         litShader->getId(), wallTexture->getId(),
         true, cubeMesh->getIndexCount()

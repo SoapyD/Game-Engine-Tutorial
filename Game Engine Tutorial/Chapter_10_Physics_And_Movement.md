@@ -29,22 +29,49 @@ The fix: run physics at a fixed rate (e.g. 60 times per second) and let renderin
 
 ### The Accumulator Pattern
 
-```cpp
-const float FIXED_TIMESTEP = 1.0f / 60.0f;  // 60 ticks per second
-float accumulator = 0.0f;
+Update the game loop in `src/main.cpp`. Your current loop uses `deltaTime` directly, which varies with frame rate. Replace it with a fixed-timestep accumulator:
 
-while (!window.shouldClose()) {
-    float frameTime = calculateDeltaTime();
+```cpp
+// ─── Game Loop ───────────────────────────────────────────────
+constexpr float FIXED_TIMESTEP = 1.0f / 60.0f;  // 60 physics ticks per second
+float accumulator = 0.0f;
+float lastFrame = 0.0f;
+
+// enable depth testing (so closer things draw in front of further things)
+glEnable(GL_DEPTH_TEST);
+
+while (!window.shouldClose())
+{
+    float currentFrame = (float)glfwGetTime();
+    float frameTime = currentFrame - lastFrame;
+    lastFrame = currentFrame;
 
     // Cap frame time to prevent spiral of death
     if (frameTime > 0.25f) frameTime = 0.25f;
 
     accumulator += frameTime;
 
-    // Run physics in fixed steps
-    while (accumulator >= FIXED_TIMESTEP) {
-        // Fixed-rate systems
-        inputSystem(registry);
+    input.update();
+    window.pollEvents();
+
+    // ─── Input (runs once per frame) ─────────────────────────
+    if (input.isKeyPressed(GLFW_KEY_ESCAPE))
+        glfwSetWindowShouldClose(window.getHandle(), true);
+
+    if (input.isKeyPressed(GLFW_KEY_W))
+        camera.processKeyboard(Camera::FORWARD, frameTime);
+    if (input.isKeyPressed(GLFW_KEY_S))
+        camera.processKeyboard(Camera::BACKWARD, frameTime);
+    if (input.isKeyPressed(GLFW_KEY_A))
+        camera.processKeyboard(Camera::LEFT, frameTime);
+    if (input.isKeyPressed(GLFW_KEY_D))
+        camera.processKeyboard(Camera::RIGHT, frameTime);
+
+    camera.processMouse(input.getMouseXOffset(), input.getMouseYOffset());
+
+    // ─── Fixed-rate systems (physics tick) ───────────────────
+    while (accumulator >= FIXED_TIMESTEP)
+    {
         physicsSystem(registry, FIXED_TIMESTEP);
         collisionSystem(registry, spatialHash, level, FIXED_TIMESTEP);
         movementSystem(registry, FIXED_TIMESTEP);
@@ -52,13 +79,28 @@ while (!window.shouldClose()) {
         accumulator -= FIXED_TIMESTEP;
     }
 
-    // Rendering runs once per frame at variable rate
-    float alpha = accumulator / FIXED_TIMESTEP;  // For interpolation
+    // ─── Render (runs once per frame at variable rate) ───────
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    float aspectRatio = (float)window.getWidth() / (float)window.getHeight();
     renderSystem(registry, camera, aspectRatio);
+
     window.swapBuffers();
 }
 ```
+
+You'll also need to add a new include at the top of `src/main.cpp` for the physics system (which we'll create later in this chapter):
+
+```cpp
+#include "engine/ecs/systems/physics_system.h"
+```
+
+Note the key changes from the Chapter 9 version:
+- `deltaTime` and `lastFrame` are replaced by `FIXED_TIMESTEP`, `accumulator`, and `frameTime`
+- Physics, collision, and movement now run inside the `while (accumulator >= FIXED_TIMESTEP)` loop using `FIXED_TIMESTEP` instead of `deltaTime`
+- Camera input still uses `frameTime` (the actual frame duration) for smooth look/movement
+- `physicsSystem` is new — we'll implement it later in this chapter
 
 ### C++ Concept: `constexpr`
 
@@ -103,7 +145,7 @@ struct CharacterPhysics {
 };
 ```
 
-A player entity would have:
+**Illustrative example** — this is what a complete player entity would look like using these components. Don't add this yet; we'll wire up a proper player entity in a later chapter once the input and movement systems are in place:
 ```cpp
 registry.emplace<Position>(player, glm::vec3(0.0f, 1.0f, 0.0f));
 registry.emplace<Velocity>(player);
@@ -111,7 +153,7 @@ registry.emplace<Gravity>(player);
 registry.emplace<OnGround>(player);
 registry.emplace<CharacterPhysics>(player);
 registry.emplace<AABBCollider>(player, glm::vec3(0.4f, 0.9f, 0.4f), false);
-registry.emplace<TagPlayer>(player);
+registry.emplace<TagPlayer>(player);  // TagPlayer would be a simple tag component
 ```
 
 ---
@@ -183,7 +225,27 @@ void physicsSystem(entt::registry& registry, float dt) {
 
 ## Ground Detection
 
-How do we know if the player is on the ground? After collision resolution, we check if there's a solid surface directly below:
+How do we know if the player is on the ground? After collision resolution, we check if there's a solid surface directly below.
+
+Add the declaration to `src/engine/ecs/systems/physics_system.h`. You'll need to forward-declare `Level` since the header doesn't know about it yet:
+
+```cpp
+#pragma once
+
+#include <entt/entt.hpp>
+
+struct Level;  // forward declaration (defined in engine/level/level.h)
+
+void physicsSystem(entt::registry& registry, float dt);
+void groundDetectionSystem(entt::registry& registry, const Level& level);
+```
+
+Then add the implementation to `src/engine/ecs/systems/physics_system.cpp`. You'll need to include the raycast and level headers at the top of the file:
+
+```cpp
+#include "engine/physics/raycast.h"
+#include "engine/level/level.h"
+```
 
 ```cpp
 void groundDetectionSystem(entt::registry& registry, const Level& level) {
@@ -231,11 +293,54 @@ void groundDetectionSystem(entt::registry& registry, const Level& level) {
 
 The `0.7f` normal check means a surface must be roughly horizontal (normal pointing mostly upward) to count as ground. Steep slopes wouldn't count — the player would slide off them.
 
+### Wiring It Up in main.cpp
+
+Add `groundDetectionSystem` to the fixed-timestep loop in `src/main.cpp`, **after** `movementSystem` (positions must be final before we probe the ground):
+
+```cpp
+while (accumulator >= FIXED_TIMESTEP)
+{
+    physicsSystem(registry, FIXED_TIMESTEP);
+    collisionSystem(registry, spatialHash, level, FIXED_TIMESTEP);
+    movementSystem(registry, FIXED_TIMESTEP);
+    groundDetectionSystem(registry, level);  // ← NEW
+
+    accumulator -= FIXED_TIMESTEP;
+}
+```
+
+### Testing It
+
+To verify gravity and ground detection are working, update the second test cube in `src/engine/ecs/scene_setup.cpp`. Rename it from `wall` to `cube2`, raise it to `y = 4.0`, and add `Velocity`, `AABBCollider`, `Gravity`, and `OnGround`:
+
+```cpp
+auto cube2 = registry.create();
+registry.emplace<Position>(cube2, glm::vec3(2.0f, 4.0f, 0.0f));    // raised up
+registry.emplace<Velocity>(cube2);                                    // starts stationary
+registry.emplace<AABBCollider>(cube2, glm::vec3(0.5f), false);       // 1m cube collider
+registry.emplace<Gravity>(cube2);                                     // falls under gravity
+registry.emplace<OnGround>(cube2);                                    // ground detection target
+registry.emplace<MeshRenderer>
+(
+    cube2,
+    cubeMesh->getVAO(),
+    0u,
+    litShader->getId(),
+    wallTexture->getId(),
+    true,
+    cubeMesh->getIndexCount()
+);
+```
+
+When you run the engine, the box should fall from its raised position, collide with the floor, and stop — proving that gravity, collision, and ground detection are all working together.
+
 ---
 
 ## Jumping
 
-Jumping is simple — when the player presses jump and is on the ground, set the Y velocity. Add this to `src/engine/ecs/systems/physics_system.cpp` and call it from the game loop:
+Jumping is simple — when the player presses jump and is on the ground, set the Y velocity.
+
+**Illustrative** — this depends on a `PlayerInput` component that we'll create in a later chapter. Don't add this yet; it shows the concept of how jumping will work once player input is wired up. It would go in `src/engine/ecs/systems/physics_system.cpp`:
 
 ```cpp
 void handleJump(entt::registry& registry) {
@@ -260,7 +365,9 @@ Quake's movement is legendary. It feels incredibly responsive and has emergent m
 
 ### Ground Acceleration
 
-On the ground, the player accelerates toward their desired direction up to `maxGroundSpeed`. Add this helper to `src/engine/ecs/systems/physics_system.cpp` (it's called by the movement system below):
+On the ground, the player accelerates toward their desired direction up to `maxGroundSpeed`.
+
+**Illustrative** — this helper and the `characterMovementSystem` below both depend on `PlayerInput`, which we'll create in a later chapter. Don't add these yet. They would go in `src/engine/ecs/systems/physics_system.cpp`:
 
 ```cpp
 void applyAcceleration(glm::vec3& velocity, const glm::vec3& wishDir,
@@ -298,7 +405,7 @@ Press strafe →
 
 This is why Quake players strafe-jump — it's not a bug, it's an emergent consequence of this acceleration model.
 
-### Putting It Together
+### Putting It Together (Illustrative)
 
 ```cpp
 void characterMovementSystem(entt::registry& registry, float dt) {
@@ -323,9 +430,9 @@ void characterMovementSystem(entt::registry& registry, float dt) {
 
 ---
 
-## Stair Stepping
+## Stair Stepping (Concept — Future Chapter)
 
-In Quake, the player glides up small steps without jumping. The approach:
+In Quake, the player glides up small steps without jumping. This will be implemented in a later chapter when we have a walking player entity. For now, here's the concept:
 
 1. Try to move forward
 2. If blocked, try moving up by `stepHeight`, then forward, then back down
@@ -366,7 +473,7 @@ void stairStep(glm::vec3& position, glm::vec3& velocity,
 }
 ```
 
-This is simplified pseudo-code — the actual implementation would use swept AABB tests for each phase. The concept is: "if direct movement fails, try going up and over."
+**Illustrative pseudo-code** — the actual implementation would use swept AABB tests for each phase and would go in `src/engine/ecs/systems/physics_system.cpp`. The concept is: "if direct movement fails, try going up and over."
 
 ---
 
@@ -374,7 +481,9 @@ This is simplified pseudo-code — the actual implementation would use swept AAB
 
 Not everything should collide with everything. Players shouldn't collide with their own bullets. Enemies might walk through each other but not through walls.
 
-**Collision layers** solve this using bitmasks:
+**Collision layers** solve this using bitmasks.
+
+**Illustrative** — this redefines `AABBCollider` with `layer` and `mask` fields, which would break the current version in `src/engine/ecs/components.h`. Don't apply this yet; we'll integrate collision layers when we add enemies and projectiles in a later chapter:
 
 ```cpp
 // C++ Concept: Bitwise operations
@@ -396,7 +505,7 @@ struct AABBCollider {
 };
 ```
 
-Two entities collide only if each one's layer is in the other's mask:
+Two entities collide only if each one's layer is in the other's mask. This would go in `src/engine/ecs/systems/collision_system.cpp` when collision layers are implemented:
 
 ```cpp
 bool shouldCollide(const AABBCollider& a, const AABBCollider& b) {
@@ -432,16 +541,18 @@ layer = CollisionLayer::PLAYER                          // 0b00000010
 
 ## The Complete Tick Order for Physics
 
+This is the full target order. Systems marked with `*` are implemented in this chapter; the rest are illustrative and will be added in later chapters:
+
 ```
-1. InputSystem              ← Read WASD, mouse, jump button
-2. CharacterMovementSystem  ← Apply acceleration based on input
-3. HandleJump               ← Set Y velocity if jumping
-4. PhysicsSystem            ← Apply gravity and friction
-5. CollisionSystem          ← Sweep and resolve against world + entities
-6. MovementSystem           ← Apply final velocity to position
-7. GroundDetectionSystem    ← Update OnGround for next frame
+1. InputSystem              ← Read WASD, mouse, jump button         (future)
+2. CharacterMovementSystem  ← Apply acceleration based on input     (future)
+3. HandleJump               ← Set Y velocity if jumping             (future)
+4. PhysicsSystem *          ← Apply gravity and friction
+5. CollisionSystem *        ← Sweep and resolve against world + entities
+6. MovementSystem *         ← Apply final velocity to position
+7. GroundDetectionSystem *  ← Update OnGround for next frame
 8. ...
-9. RenderSystem
+9. RenderSystem *
 ```
 
 ---
