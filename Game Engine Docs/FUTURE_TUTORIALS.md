@@ -40,3 +40,21 @@ Tutorials that need to be written but don't yet exist. These cover concepts intr
 **Likely home**: Cleanup 30a (Rendering Pipeline Cleanup) — already lists "shader cache" and "draw call batching audit" as targets.
 
 ---
+
+## NPC Trigger Interaction
+
+**Source**: Chapter 11 (Doors, Lifts & Triggers) — trigger system currently filters by `TagPlayer` only
+
+**What it covers**:
+- Generalise the trigger system so NPCs (and potentially projectiles) can activate triggers
+- Options: collision layers on `AABBCollider` (layer/mask filtering already stubbed), a `TagTriggerable` component, or per-trigger allowlists
+- Decide which trigger actions NPCs should be able to activate (doors yes, teleporters maybe, damage zones yes, level changes no)
+
+**Prerequisites**:
+- Trigger system with `TagPlayer` filter (Chapter 11)
+- NPC entities with Position, AABBCollider, and AI behaviour
+- Collision layer system (already has `layer` and `mask` fields on `AABBCollider` but trigger system doesn't use them yet)
+
+**Why it was deferred**: Chapter 11 has no NPCs — the only non-player collider entities are physics demo cubes, which were incorrectly triggering doors. Filtering by `TagPlayer` was the simplest correct fix. Generalising requires NPC entities to exist first.
+
+---

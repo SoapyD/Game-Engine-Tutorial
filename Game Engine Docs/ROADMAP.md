@@ -66,50 +66,33 @@ Building out the level and interacting with it.
 
 ---
 
-### Phase 4: Gameplay (Chapters 12-15)
-Turning the engine into a game.
+### Phase 4: Player & Gameplay (Chapters 12-15a)
+Giving the player a real body and turning the engine into a playable game.
 
 | Ch | Title | Key Concepts |
 |----|-------|-------------|
 | 12 | Weapons & Projectiles | Hitscan, projectile entities, damage system |
-| 13 | Items & Pickups | Health, ammo, armour, respawning items |
-| 14 | Enemy AI | State machines, pathfinding basics, line of sight |
-| 15 | HUD & UI | 2D rendering, health bar, ammo counter, crosshair |
+| 13 | Player Body & Debug HUD | Physical player body, reversed camera sync, input→velocity pipeline, health clamping, stb_easy_font debug overlay |
+| 14 | Moon Jumping & Platforming | Low-gravity tuning, variable jump height, coyote time, platforming test arena, moving platform riding |
+| 15 | Gameplay Polish | Crosshair, basic HUD, death/respawn, damage feedback, knockback |
+| 15a | Cleanup | Refactor scene_setup, fix typos, consolidate systems, document tick order |
 
-**Milestone:** Playable single-player FPS with enemies, items, and HUD.
-
----
-
-### Phase 5: Audio (Chapter 16)
-
-| Ch | Title | Key Concepts |
-|----|-------|-------------|
-| 16 | Audio System | miniaudio, 3D positional audio, sound effects, music |
-
-**Milestone:** Spatial audio for weapons, footsteps, and ambience.
+**Milestone:** Player with a physical body that jumps between platforms, rides lifts, takes lava damage, and dies/respawns. Debug HUD showing health and FPS.
 
 ---
 
-### Phase 6: Multiplayer (Chapters 17-19)
-The hardest part — networking.
+### Phase 5: TrenchBroom Integration (Chapters 16-20)
+Replacing the hardcoded level with a proper level editor workflow.
 
 | Ch | Title | Key Concepts |
 |----|-------|-------------|
-| 17 | Networking Foundation | Client-server model, ENet, reliable/unreliable channels |
-| 18 | State Synchronisation | Snapshots, delta compression, entity interpolation |
-| 19 | Client-Side Prediction | Input prediction, server reconciliation, lag compensation |
+| 16 | .map Parser & Brush Rendering | TrenchBroom .map format, plane→polygon→triangle conversion, brush-to-mesh, texture mapping |
+| 17 | Entity Mapping & FGD | FGD entity definitions, classname→ECS factory functions, point vs brush entities |
+| 18 | Brush Collision | Collision from brush planes, Minkowski expansion against faces, spatial hash with brush AABBs |
+| 19 | TrenchBroom Config & Workflow | GameConfig.cfg, texture browser integration, hot reload, test level construction |
+| 20 | Final Level & Integration | Complete playable TrenchBroom level exercising all features: rooms, doors, lifts, lava, platforms, weapons, pickups, lighting |
 
-**Milestone:** Two players in the same level, shooting each other over a network.
-
----
-
-### Phase 7: Polish (Chapter 20)
-
-| Ch | Title | Key Concepts |
-|----|-------|-------------|
-| 20 | Particles, Effects & Polish | Particle system, muzzle flash, explosions, screen shake |
-
-**Milestone:** A polished, complete Quake-like FPS.
+**Milestone:** Fully playable level authored in TrenchBroom with all engine features working end-to-end.
 
 ---
 
@@ -129,16 +112,16 @@ Ch 0 (Setup)
                  │                   └── Ch 9 (Collision)
                  │                        └── Ch 10 (Physics)
                  │                             ├── Ch 11 (Triggers)
-                 │                             ├── Ch 12 (Weapons)
-                 │                             │    └── Ch 13 (Items)
-                 │                             │         └── Ch 14 (AI)
-                 │                             │              └── Ch 15 (HUD)
-                 │                             └── Ch 16 (Audio)
-                 └── Ch 17 (Networking)
-                      └── Ch 18 (State Sync)
-                           └── Ch 19 (Prediction)
-
-Ch 20 (Polish) depends on everything
+                 │                             └── Ch 12 (Weapons)
+                 │                                  └── Ch 13 (Player Body)
+                 │                                       └── Ch 14 (Platforming)
+                 │                                            └── Ch 15 (Gameplay Polish)
+                 │                                                 └── Ch 15a (Cleanup)
+                 │                                                      └── Ch 16 (.map Parser)
+                 │                                                           └── Ch 17 (Entity Mapping)
+                 │                                                                └── Ch 18 (Brush Collision)
+                 │                                                                     └── Ch 19 (TB Config)
+                 │                                                                          └── Ch 20 (Final Level)
 ```
 
 ---
@@ -160,11 +143,12 @@ Ch 20 (Polish) depends on everything
 | 10 | Complete | Gravity, friction, fixed timestep, jumping, Quake air control, stair stepping |
 | 11 | Complete | State machines, trigger volumes, doors, lifts, teleporters, damage zones |
 | 12 | Complete | Hitscan/projectile weapons, splash damage, rocket jumping, weapon switching |
-| 13 | Complete | Health/ammo/armour/weapon pickups, respawning, item bob, damage absorption |
-| 14 | Complete | FSM AI, line of sight, A* pathfinding, nav graphs, enemy types as data |
-| 15 | Complete | Orthographic HUD, crosshair, health/ammo bars, bitmap fonts, damage flash |
-| 16 | Complete | miniaudio setup, AudioManager class, 3D positional audio, attenuation, AudioSource/PlaySoundOnce components |
-| 17 | Complete | Client-server architecture, ENet, PacketWriter/Reader serialization, NetworkId, game loop split |
-| 18 | Complete | Server snapshots, delta compression, InterpolationBuffer, entity creation/destruction over network |
-| 19 | Complete | Input buffering, local prediction, server reconciliation, lag compensation with PositionHistory rewind |
-| 20 | Complete | ParticlePool (object pool), billboard rendering, emitters, screen shake, view bob, interpolation functions |
+| 13 | Complete | Physical player body, reversed camera sync, input→velocity, health clamping, stb_easy_font debug HUD |
+| 14 | Planned | Low-gravity tuning, variable jump height, coyote time, platforming test arena |
+| 15 | Planned | Crosshair, basic HUD, death/respawn, damage feedback |
+| 15a | Planned | Refactor scene_setup, fix typos, consolidate systems |
+| 16 | Planned | TrenchBroom .map parser, plane→polygon conversion, brush-to-mesh rendering |
+| 17 | Planned | FGD entity definitions, classname→ECS factory mapping |
+| 18 | Planned | Collision from brush planes, Minkowski expansion, spatial hash integration |
+| 19 | Planned | TrenchBroom GameConfig.cfg, texture browser, hot reload workflow |
+| 20 | Planned | Complete playable TrenchBroom level with all features integrated |

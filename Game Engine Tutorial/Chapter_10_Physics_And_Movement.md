@@ -475,6 +475,8 @@ void stairStep(glm::vec3& position, glm::vec3& velocity,
 
 **Illustrative pseudo-code** — the actual implementation would use swept AABB tests for each phase and would go in `src/engine/ecs/systems/physics_system.cpp`. The concept is: "if direct movement fails, try going up and over."
 
+> **Note:** In Chapter 13 we implement a simplified version of this using a collision-skip approach: if a horizontal sweep hits an obstacle whose top is within `stepHeight` of the player's feet, we skip the collision entirely and let gravity + ground detection handle the vertical adjustment. This is less general than the three-step algorithm above but works well for walking over thin platforms like lifts.
+
 ---
 
 ## Bitwise Collision Layers
