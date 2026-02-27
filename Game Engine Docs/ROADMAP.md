@@ -14,6 +14,7 @@ A ground-up 3D FPS engine in C++ using ECS architecture, inspired by Quake.
 | Windowing/Input | GLFW | Cross-platform, lightweight, standard |
 | OpenGL Loading | GLAD | Generates only what you need |
 | Math | GLM | Mirrors GLSL syntax, header-only |
+| Physics | Jolt Physics | Modern C++17, multi-threaded, used in AAA games |
 | Image Loading | stb_image | Single header, no dependencies |
 | Model Loading | Assimp (later) or tinyobjloader | Start simple, upgrade later |
 | Audio | miniaudio | Single header, cross-platform |
@@ -66,31 +67,45 @@ Building out the level and interacting with it.
 
 ---
 
-### Phase 4: Player & Gameplay (Chapters 12-15a)
-Giving the player a real body and turning the engine into a playable game.
+### Phase 4: Player & Gameplay (Chapters 12-15)
+Giving the player a real body, integrating proper physics, and turning the engine into a playable game.
 
 | Ch | Title | Key Concepts |
 |----|-------|-------------|
 | 12 | Weapons & Projectiles | Hitscan, projectile entities, damage system |
-| 13 | Player Body & Debug HUD | Physical player body, reversed camera sync, input→velocity pipeline, health clamping, stb_easy_font debug overlay |
-| 14 | Moon Jumping & Platforming | Low-gravity tuning, variable jump height, coyote time, platforming test arena, moving platform riding |
-| 15 | Gameplay Polish | Crosshair, basic HUD, death/respawn, damage feedback, knockback |
-| 15a | Cleanup | Refactor scene_setup, fix typos, consolidate systems, document tick order |
+| 13 | Player Body & Debug HUD | Physical player body, reversed camera sync, input→velocity pipeline, health clamping, stair-stepping, stb_easy_font debug overlay |
+| 14 | Jolt Physics — World & Static Geometry | CMake FetchContent, Jolt setup/boilerplate, static bodies from level surfaces, dynamic bodies for physics objects, replacing custom physics systems |
+| 15 | Jolt Character Controller & Kinematic Bodies | CharacterVirtual for player movement, kinematic movers (lifts/doors push player), sensor bodies for triggers, automatic stair stepping |
 
-**Milestone:** Player with a physical body that jumps between platforms, rides lifts, takes lava damage, and dies/respawns. Debug HUD showing health and FPS.
+**Milestone:** Player with Jolt-powered physics — solid collision, lifts that carry the player, no jitter on resting contact. Debug HUD showing health and FPS.
 
 ---
 
-### Phase 5: TrenchBroom Integration (Chapters 16-20)
+### Phase 5: Test Objects & Gameplay (Chapters 16-20)
+Building gameplay content and test scenarios to exercise the physics system.
+
+| Ch | Title | Key Concepts |
+|----|-------|-------------|
+| 16 | Gameplay Polish | Crosshair, expanded HUD (ammo/weapon), death/respawn, damage feedback, knockback |
+| 17 | Platforming Arena | Floating platforms, variable jump height, coyote time, low-gravity tuning |
+| 18 | Physics Puzzles & Props | Pushable objects, stacking, pressure plates, physics-driven doors |
+| 19 | Combat Arena | Enemy placement, health pickups, ammo crates, arena design |
+| 20 | Integration Test Level | Complete playable level exercising all features end-to-end |
+
+**Milestone:** Fully playable hardcoded level with platforming, combat, physics puzzles, and all engine features working together.
+
+---
+
+### Phase 6: TrenchBroom Integration (Chapters 21-25)
 Replacing the hardcoded level with a proper level editor workflow.
 
 | Ch | Title | Key Concepts |
 |----|-------|-------------|
-| 16 | .map Parser & Brush Rendering | TrenchBroom .map format, plane→polygon→triangle conversion, brush-to-mesh, texture mapping |
-| 17 | Entity Mapping & FGD | FGD entity definitions, classname→ECS factory functions, point vs brush entities |
-| 18 | Brush Collision | Collision from brush planes, Minkowski expansion against faces, spatial hash with brush AABBs |
-| 19 | TrenchBroom Config & Workflow | GameConfig.cfg, texture browser integration, hot reload, test level construction |
-| 20 | Final Level & Integration | Complete playable TrenchBroom level exercising all features: rooms, doors, lifts, lava, platforms, weapons, pickups, lighting |
+| 21 | .map Parser & Brush Rendering | TrenchBroom .map format, plane→polygon→triangle conversion, brush-to-mesh, texture mapping |
+| 22 | Entity Mapping & FGD | FGD entity definitions, classname→ECS factory functions, point vs brush entities |
+| 23 | Brush Collision | Collision from brush planes, Jolt static bodies from brushes, spatial optimization |
+| 24 | TrenchBroom Config & Workflow | GameConfig.cfg, texture browser integration, hot reload, test level construction |
+| 25 | Final Level & Integration | Complete playable TrenchBroom level exercising all features: rooms, doors, lifts, lava, platforms, weapons, pickups, lighting |
 
 **Milestone:** Fully playable level authored in TrenchBroom with all engine features working end-to-end.
 
@@ -114,14 +129,18 @@ Ch 0 (Setup)
                  │                             ├── Ch 11 (Triggers)
                  │                             └── Ch 12 (Weapons)
                  │                                  └── Ch 13 (Player Body)
-                 │                                       └── Ch 14 (Platforming)
-                 │                                            └── Ch 15 (Gameplay Polish)
-                 │                                                 └── Ch 15a (Cleanup)
-                 │                                                      └── Ch 16 (.map Parser)
-                 │                                                           └── Ch 17 (Entity Mapping)
-                 │                                                                └── Ch 18 (Brush Collision)
-                 │                                                                     └── Ch 19 (TB Config)
-                 │                                                                          └── Ch 20 (Final Level)
+                 │                                       └── Ch 14 (Jolt World)
+                 │                                            └── Ch 15 (Jolt Character)
+                 │                                                 └── Ch 16 (Gameplay Polish)
+                 │                                                      └── Ch 17 (Platforming)
+                 │                                                           └── Ch 18 (Physics Puzzles)
+                 │                                                                └── Ch 19 (Combat Arena)
+                 │                                                                     └── Ch 20 (Test Level)
+                 │                                                                          └── Ch 21 (.map Parser)
+                 │                                                                               └── Ch 22 (Entity Mapping)
+                 │                                                                                    └── Ch 23 (Brush Collision)
+                 │                                                                                         └── Ch 24 (TB Config)
+                 │                                                                                              └── Ch 25 (Final Level)
 ```
 
 ---
@@ -144,11 +163,15 @@ Ch 0 (Setup)
 | 11 | Complete | State machines, trigger volumes, doors, lifts, teleporters, damage zones |
 | 12 | Complete | Hitscan/projectile weapons, splash damage, rocket jumping, weapon switching |
 | 13 | Complete | Physical player body, reversed camera sync, input→velocity, health clamping, stb_easy_font debug HUD |
-| 14 | Planned | Low-gravity tuning, variable jump height, coyote time, platforming test arena |
-| 15 | Planned | Crosshair, basic HUD, death/respawn, damage feedback |
-| 15a | Planned | Refactor scene_setup, fix typos, consolidate systems |
-| 16 | Planned | TrenchBroom .map parser, plane→polygon conversion, brush-to-mesh rendering |
-| 17 | Planned | FGD entity definitions, classname→ECS factory mapping |
-| 18 | Planned | Collision from brush planes, Minkowski expansion, spatial hash integration |
-| 19 | Planned | TrenchBroom GameConfig.cfg, texture browser, hot reload workflow |
-| 20 | Planned | Complete playable TrenchBroom level with all features integrated |
+| 14 | Written | Jolt Physics integration, static bodies, dynamic bodies, physics world |
+| 15 | Written | CharacterVirtual player controller, kinematic movers, sensor bodies |
+| 16 | Planned | Crosshair, expanded HUD, death/respawn, damage feedback |
+| 17 | Planned | Floating platforms, variable jump, coyote time, platforming test arena |
+| 18 | Planned | Pushable objects, pressure plates, physics-driven doors |
+| 19 | Planned | Enemy placement, health/ammo pickups, combat arena |
+| 20 | Planned | Complete integration test level |
+| 21 | Planned | TrenchBroom .map parser, plane→polygon conversion, brush-to-mesh rendering |
+| 22 | Planned | FGD entity definitions, classname→ECS factory mapping |
+| 23 | Planned | Brush collision with Jolt static bodies |
+| 24 | Planned | TrenchBroom GameConfig.cfg, texture browser, hot reload workflow |
+| 25 | Planned | Complete playable TrenchBroom level with all features integrated |
