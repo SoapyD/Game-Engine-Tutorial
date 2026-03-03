@@ -6,6 +6,7 @@
 - Converting entity colliders into dynamic rigid bodies
 - Syncing Jolt body transforms back into ECS `Position` components
 - Wiring Jolt into `main.cpp` and removing old custom physics systems
+- Fixing projectile movement and adding Jolt impulses to the combat system
 - Updating `CMakeLists.txt` to swap source files
 
 ---
@@ -368,6 +369,96 @@ if (registry.all_of<JoltBody>(entity))
 
 ---
 
+## Step 8c: Fix Projectile Movement & Jolt Impulses
+
+We just removed `movementSystem`, which applied `Velocity` to `Position` every tick. Dynamic bodies don't need it — Jolt moves them now. But **projectile entities** still rely on velocity-based movement — they don't have Jolt bodies, they're lightweight short-lived entities that fly in a straight line until they hit something.
+
+We also have a new problem: when a projectile hits a dynamic body (like the test cubes), it should **push** it. Before Jolt, the splash damage function applied knockback via the `Velocity` component. Now that Jolt controls dynamic bodies, `Velocity` changes are ignored — we need to apply Jolt **impulses** instead.
+
+### Update `combat_system.cpp`
+
+Add the Jolt include:
+
+```cpp
+#include "engine/physics/jolt_world.h"
+```
+
+#### Projectile movement
+
+In the projectile collision section of `combatSystem`, add velocity integration **before** the collision check. Projectiles are simple — no collision response, just straight-line flight:
+
+```cpp
+// ─── Projectile movement & collision ─────────────────────────
+auto projView = registry.view<Position, Velocity, AABBCollider, Projectile>();
+std::vector<entt::entity> toDestroy;
+
+for (auto [projEntity, pos, vel, col, proj] : projView.each())
+{
+    // move projectile (no Jolt body — simple velocity integration)
+    pos.value += vel.value * dt;
+
+    AABB projBox = AABB::fromCentreSize(pos.value, col.halfExtents);
+```
+
+One line — `pos.value += vel.value * dt` — replaces the role `movementSystem` used to play for projectiles.
+
+#### Jolt impulse on direct hit
+
+Inside the `if (projBox.intersects(targetBox))` block, after the health damage check, add:
+
+```cpp
+// push Jolt bodies on impact
+if (registry.all_of<JoltBody>(target))
+{
+    auto& joltBody = registry.get<JoltBody>(target);
+    auto& jolt = registry.ctx().get<JoltWorld>();
+    glm::vec3 dir = glm::normalize(vel.value);
+    float impulseMag = proj.damage * 2.0f;
+    jolt.getBodyInterface().AddImpulse
+    (
+        joltBody.id,
+        JPH::Vec3(dir.x * impulseMag, dir.y * impulseMag, dir.z * impulseMag)
+    );
+}
+```
+
+`AddImpulse` applies an instantaneous change in momentum — the body accelerates based on its mass. A 10-damage projectile applies 20 units of impulse in the travel direction, which sends a 1 kg cube flying but barely nudges a 100 kg crate.
+
+#### Jolt impulse for splash damage
+
+The `applySplashDamage` function only iterates entities with `Health` — the test cubes don't have `Health`, so they're skipped entirely. Add a second pass after the existing loop that pushes any Jolt body within the blast radius:
+
+```cpp
+// push Jolt bodies away from explosion (even without Health)
+auto joltView = registry.view<Position, JoltBody>();
+for (auto [entity, pos, joltBody] : joltView.each())
+{
+    if (entity == ignore) continue;
+
+    float distance = glm::length(pos.value - center);
+    if (distance > radius) continue;
+
+    float scale = 1.0f - (distance / radius);
+    glm::vec3 pushDir = (distance > 0.01f)
+        ? glm::normalize(pos.value - center)
+        : glm::vec3(0.0f, 1.0f, 0.0f);
+    float knockback = maxDamage * scale * 2.0f;
+
+    auto& jolt = registry.ctx().get<JoltWorld>();
+    jolt.getBodyInterface().AddImpulse
+    (
+        joltBody.id,
+        JPH::Vec3(pushDir.x * knockback, pushDir.y * knockback, pushDir.z * knockback)
+    );
+}
+```
+
+The linear falloff means entities at the centre of the explosion get full force, tapering to zero at the edge. The `distance > 0.01f` guard avoids a division-by-zero when the body is exactly at the blast centre — in that case we default to pushing straight up.
+
+> **Why two loops?** The first loop (`Position, Health`) handles damage + velocity knockback for entities that still use the old velocity-based movement (like the player before Chapter 15a). The second loop (`Position, JoltBody`) handles impulse for Jolt-managed bodies. An entity with both `Health` and `JoltBody` gets processed by both — damage from the first, physics push from the second.
+
+---
+
 ## Step 9: Update CMakeLists.txt Source Files
 
 ### Remove old physics files
@@ -403,6 +494,7 @@ src/engine/ecs/systems/jolt_sync_system.cpp
 | `scene_setup.cpp` | Added `createLevelBodies()`, `createDynamicBody()`, inline calls for each cube |
 | `jolt_sync_system.h/cpp` | **New** -- Reads Jolt body transforms into ECS components |
 | `demo_reset_system.cpp` | Added Jolt body teleport on timer reset |
+| `combat_system.cpp` | Added projectile velocity integration, Jolt impulse on impact and splash |
 | `main.cpp` | Replaced old physics setup and system calls with Jolt |
 | `CMakeLists.txt` | Removed old physics sources, added new sources |
 
@@ -426,7 +518,9 @@ After building and running:
 2. **Test cubes fall and land cleanly** -- no jitter, no micro-bouncing. Jolt's resting contact solver keeps them perfectly still once they settle
 3. **The sliding cube slides and stops** -- friction is handled by Jolt's material system
 4. **The lift and door still work** -- `moverSystem` is unchanged, it animates position independently of physics
-5. **The player can't move yet** -- that's expected! The player entity doesn't have a Jolt body; we deliberately skipped it. Chapter 15a adds a proper character controller
+5. **Projectiles still fly** -- rockets and nails travel through the air and explode/collide as before
+6. **Shooting a cube pushes it** -- fire a rocket near a test cube and watch it fly. Direct hits push in the travel direction, splash damage pushes outward from the blast centre
+7. **The player can't move yet** -- that's expected! The player entity doesn't have a Jolt body; we deliberately skipped it. Chapter 15a adds a proper character controller
 
 ### Troubleshooting
 

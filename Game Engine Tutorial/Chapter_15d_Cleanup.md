@@ -24,7 +24,7 @@ src/engine/ecs/systems/archived/
 |------|-------------|-------------|
 | `collision_system.h/.cpp` | AABB sweep collision detection and response | Jolt's rigid body solver + `CharacterVirtual::ExtendedUpdate` |
 | `physics_system.h/.cpp` | Gravity, friction, ground detection via raycasting | Jolt gravity + `CharacterVirtual` ground state |
-| `movement_system.h/.cpp` | Applied `Velocity` to `Position` each tick | Jolt body simulation + `joltSyncSystem` |
+| `movement_system.h/.cpp` | Applied `Velocity` to `Position` each tick | Jolt body simulation + `joltSyncSystem` (projectile movement patched into `combatSystem` in Ch 14b) |
 | `player_movement_system.h/.cpp` | Quake-style acceleration from input → velocity | `playerCharacterSystem` (same acceleration, but drives `CharacterVirtual`) |
 
 These files are already absent from `CMakeLists.txt` — they won't affect the build. Archiving them keeps the active systems directory clean while preserving the code for reference.

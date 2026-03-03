@@ -134,7 +134,7 @@ After building and running:
 5. **Stair stepping works** — walk onto the lift's thin platform without being blocked. `ExtendedUpdate` handles this automatically
 6. **Cubes land cleanly** — no jitter, no micro-bouncing
 7. **Lava still damages you** — trigger system is unchanged
-8. **Weapons still work** — combat system is unchanged
+8. **Weapons still work** — projectiles fly and push Jolt bodies on impact (patched in Ch 14b)
 
 ### Troubleshooting
 
